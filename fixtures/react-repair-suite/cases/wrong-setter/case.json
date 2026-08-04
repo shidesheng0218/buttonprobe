@@ -1,0 +1,7 @@
+{
+  "name": "wrong setter target",
+  "testId": "wrong-setter",
+  "label": "Wrong setter target",
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [target, setTarget] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return <button data-testid=\"wrong-setter\" onClick={() => setDecoy(\"updated\")}>Wrong setter target</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [target, setTarget] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return <button data-testid=\"wrong-setter\" onClick={() => setTarget(\"updated\")}>Wrong setter target</button>;\n}\n"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "missing callback prop wiring",
+  "testId": "missing-callback",
+  "label": "Missing callback prop wiring",
+  "source": "function ChildButton({ onAction }: { onAction?: () => void }) {\n  return <button data-testid=\"missing-callback\" onClick={() => onAction?.()}>Missing callback prop wiring</button>;\n}\nexport function App() {\n  return <ChildButton />;\n}\n",
+  "fixedSource": "function ChildButton({ onAction }: { onAction?: () => void }) {\n  return <button data-testid=\"missing-callback\" onClick={() => onAction?.()}>Missing callback prop wiring</button>;\n}\nexport function App() {\n  return <ChildButton onAction={() => document.body.dataset.fixed = \"true\"} />;\n}\n"
+}

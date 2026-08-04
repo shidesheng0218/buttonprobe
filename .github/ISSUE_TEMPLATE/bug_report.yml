@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a deterministic scan, verify, or repair problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Include the command, URL shape, and the observed result.
+    validations:
+      required: true
+  - type: textarea
+    id: proof
+    attributes:
+      label: ButtonProbe evidence
+      description: Attach report.html, proof.json, eval-results.json, screenshots, or verified.diff when possible.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: ButtonProbe version
+      placeholder: npx buttonprobe --version
+    validations:
+      required: false

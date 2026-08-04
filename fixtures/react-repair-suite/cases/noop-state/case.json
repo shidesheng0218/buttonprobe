@@ -1,0 +1,7 @@
+{
+  "name": "no-op state update",
+  "testId": "noop-state",
+  "label": "No-op state update",
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"noop-state\" onClick={() => setStatus(status)}>No-op state update</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"noop-state\" onClick={() => setStatus(\"fixed\")}>No-op state update</button>;\n}\n"
+}

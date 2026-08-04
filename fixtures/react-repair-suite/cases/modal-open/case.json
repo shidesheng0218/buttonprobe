@@ -1,0 +1,7 @@
+{
+  "name": "conditional modal open",
+  "testId": "modal-open",
+  "label": "Conditional modal open",
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [open, setOpen] = useState(false);\n  return <button data-testid=\"modal-open\" onClick={() => false}>Conditional modal open</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [open, setOpen] = useState(false);\n  return <button data-testid=\"modal-open\" onClick={() => setOpen(true)}>Conditional modal open</button>;\n}\n"
+}

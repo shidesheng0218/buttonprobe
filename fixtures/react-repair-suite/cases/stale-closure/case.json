@@ -1,0 +1,7 @@
+{
+  "name": "stale closure state update",
+  "testId": "stale-closure",
+  "label": "Stale closure state update",
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"stale-closure\" onClick={() => setTimeout(() => setStatus(status), 10)}>Stale closure state update</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"stale-closure\" onClick={() => setTimeout(() => setStatus(\"fixed\"), 10)}>Stale closure state update</button>;\n}\n"
+}

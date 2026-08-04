@@ -1,0 +1,19 @@
+name: Fixture request
+description: Propose a real React/Vite UI repair case for the public benchmark.
+title: "[Fixture]: "
+labels: ["fixture"]
+body:
+  - type: input
+    id: repo
+    attributes:
+      label: Public repo and commit
+      placeholder: https://github.com/org/repo @ abc123
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario contract
+      description: Describe the route, target selector, expected behavior, and forbidden regressions.
+    validations:
+      required: true

@@ -1,0 +1,22 @@
+name: ButtonProbe
+
+on:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dev -- --host 127.0.0.1 &
+      - run: npx wait-on http://127.0.0.1:3000
+      - run: npx buttonprobe http://127.0.0.1:3000 --output buttonprobe-report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buttonprobe-report
+          path: buttonprobe-report

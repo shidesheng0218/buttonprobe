@@ -1,0 +1,7 @@
+node_modules/
+dist/
+demo/dist/
+.buttonprobe/
+.buttonprobe-*/
+coverage/
+*.log

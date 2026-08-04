@@ -1,0 +1,8 @@
+{
+  "name": "async handler swallows error",
+  "testId": "async-swallow",
+  "label": "Async handler swallows error",
+  "forceUiFailure": true,
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"async-swallow\" onClick={async () => { try { throw new Error(\"boom\"); } catch { setStatus(\"idle\"); } }}>Async handler swallows error</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"async-swallow\" onClick={async () => { try { await Promise.resolve(); setStatus(\"fixed\"); } catch { setStatus(\"error\"); } }}>Async handler swallows error</button>;\n}\n"
+}

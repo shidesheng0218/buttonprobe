@@ -1,0 +1,16 @@
+{
+  "name": "buttonprobe-viral-demo-react",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "test": "node src/App.test.mjs",
+    "mock": "node mock-openai-compatible.mjs"
+  },
+  "dependencies": {
+    "vite": "^8.1.5",
+    "typescript": "^7.0.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

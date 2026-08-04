@@ -1,0 +1,11 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  root: dirname(fileURLToPath(import.meta.url)),
+  server: {
+    host: "127.0.0.1",
+    port: 5173
+  }
+});

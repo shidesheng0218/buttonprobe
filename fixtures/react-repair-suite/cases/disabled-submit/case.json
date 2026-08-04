@@ -1,0 +1,7 @@
+{
+  "name": "disabled submit handler",
+  "testId": "disabled-submit",
+  "label": "Disabled submit handler",
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [submitted, setSubmitted] = useState(false);\n  return <button data-testid=\"disabled-submit\" onClick={() => {}}>Disabled submit handler</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [submitted, setSubmitted] = useState(false);\n  return <button data-testid=\"disabled-submit\" onClick={() => setSubmitted(true)}>Disabled submit handler</button>;\n}\n"
+}

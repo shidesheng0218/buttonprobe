@@ -1,0 +1,81 @@
+{
+  "name": "buttonprobe",
+  "version": "0.1.0-alpha.1",
+  "description": "AI-powered dead button detector and verified repair loop for local React apps. BYOK, Claude/Ollama-friendly, zero backend.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shidesheng0218/buttonprobe.git"
+  },
+  "homepage": "https://github.com/shidesheng0218/buttonprobe#readme",
+  "bugs": {
+    "url": "https://github.com/shidesheng0218/buttonprobe/issues"
+  },
+  "keywords": [
+    "button",
+    "ui-testing",
+    "react",
+    "vite",
+    "playwright",
+    "ai",
+    "repair",
+    "verified-diff",
+    "ollama",
+    "claude",
+    "byok"
+  ],
+  "type": "module",
+  "bin": {
+    "buttonprobe": "./dist/cli.js"
+  },
+  "exports": {
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "scripts",
+    "fixtures/viral-demo-react",
+    "fixtures/react-repair-suite",
+    "README.md",
+    "ROADMAP.md",
+    "IMPLEMENTATION_PLAN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:packed": "node scripts/test-packed.mjs",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "demo": "vite --config demo/vite.config.ts",
+    "demo:build": "vite build --config demo/vite.config.ts",
+    "demo:viral": "vite --config fixtures/viral-demo-react/vite.config.ts",
+    "record:demo": "node scripts/record-demo.mjs",
+    "eval:viral": "tsx src/cli.ts eval viral --output .buttonprobe/eval/viral",
+    "eval:react": "tsx src/cli.ts eval react --output .buttonprobe/eval/react"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "playwright": "^1.62.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.8",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "lucide-react": "^1.28.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

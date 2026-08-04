@@ -1,0 +1,8 @@
+{
+  "name": "normal same-page regression guard",
+  "testId": "normal-button",
+  "label": "Normal same-page button",
+  "normal": true,
+  "source": "import { useState } from \"react\";\nexport function App() {\n  const [saved, setSaved] = useState(false);\n  return <button data-testid=\"normal-button\" onClick={() => setSaved(true)}>Normal same-page button</button>;\n}\n",
+  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [saved, setSaved] = useState(false);\n  return <button data-testid=\"normal-button\" onClick={() => setSaved(true)}>Normal same-page button</button>;\n}\n"
+}
