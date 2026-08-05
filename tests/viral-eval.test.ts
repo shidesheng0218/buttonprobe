@@ -55,8 +55,8 @@ describe("viral eval", () => {
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
     expect(readme).toContain("10 independent React cases");
-    expect(readme).toContain("8 UI-verified repairs");
-    expect(readme).toContain("Last verified: August 4, 2026");
+    expect(readme).toContain("9 UI-verified repairs");
+    expect(readme).toContain("Last verified: August 5, 2026");
     expect(readme).toContain("npx buttonprobe eval viral");
 
     const gif = await readFile("docs/buttonprobe-demo.gif");
