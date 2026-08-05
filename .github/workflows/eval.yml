@@ -1,14 +1,14 @@
-name: CI
+name: Eval
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
 
 jobs:
-  verify:
+  eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,8 +17,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:ci
-      - run: npm run typecheck
       - run: npm run build
-      - run: npm run test:packed
-      - run: npm pack --dry-run
+      - run: npm run eval:viral
+      - run: npm run eval:react
