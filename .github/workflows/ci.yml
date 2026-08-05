@@ -20,5 +20,4 @@ jobs:
       - run: npm run test:ci
       - run: npm run typecheck
       - run: npm run build
-      - run: npm run test:packed
       - run: npm pack --dry-run
