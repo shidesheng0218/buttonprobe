@@ -49,6 +49,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "test:ci": "vitest run --exclude tests/cli.test.ts --exclude tests/patch-proof.test.ts --exclude tests/viral-eval.test.ts --exclude tests/workflow.e2e.test.ts --exclude tests/worktree-repair.test.ts",
     "test:packed": "node scripts/test-packed.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
