@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import type { BehaviorContract, BusinessProfile, NetworkSafetyMode, ScenarioContract } from "./types.js";
+import type { BehaviorContract, BrowserName, BusinessProfile, NetworkSafetyMode, ScenarioContract } from "./types.js";
 import type { WorkflowOptions } from "./workflow.js";
 
 export interface ButtonProbeConfig {
@@ -33,6 +33,7 @@ export interface ButtonProbeConfig {
   behaviorContracts?: Record<string, BehaviorContract> | undefined;
   scenarios?: Record<string, ScenarioContract> | undefined;
   profiles?: Record<string, BusinessProfile> | undefined;
+  browsers?: BrowserName[] | undefined;
 }
 
 function assertNumber(value: unknown, field: string): number | undefined {
@@ -341,6 +342,7 @@ export function mergeWorkflowOptions(
     repairMaxTokens: overrides.repairMaxTokens ?? config.repairMaxTokens ?? 3000,
     maxModelCalls: overrides.maxModelCalls ?? config.maxModelCalls ?? 14,
     maxFixIssues: overrides.maxFixIssues ?? config.maxFixIssues ?? 3,
+    browsers: overrides.browsers ?? config.browsers ?? ["chromium"],
     ...(config.behaviorContracts ? { behaviorContracts: config.behaviorContracts } : {}),
     ...(config.scenarios ? { scenarios: config.scenarios } : {}),
     apply: overrides.apply ?? false,

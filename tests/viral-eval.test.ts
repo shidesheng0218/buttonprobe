@@ -31,6 +31,8 @@ describe("viral eval", () => {
     ]);
     expect(written.benchmarks.every((benchmark) => benchmark.outcome === "pass")).toBe(true);
     expect(written.benchmarks.every((benchmark) => typeof benchmark.verifiedDiffPath === "string")).toBe(true);
+    expect(written.summary.sourceTop1Accuracy).toBeGreaterThanOrEqual(0);
+    expect(written.benchmarks.every((benchmark) => benchmark.sourceMapping.expectedSource === "src/App.tsx")).toBe(true);
     expect(
       written.benchmarks
         .filter((benchmark) => benchmark.repairStatus === "verified")

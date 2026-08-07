@@ -186,7 +186,7 @@ export class AIClient {
       outputTokens: modelEvents.reduce((total, event) => total + event.outputTokens, 0),
       latencyMs: modelEvents.reduce((total, event) => total + event.latencyMs, 0),
       cacheHits: this.usageEvents.filter((event) => event.cached).length,
-      cacheMisses: modelEvents.filter((event) => event.success).length,
+      cacheMisses: modelEvents.length,
       events: [...this.usageEvents]
     };
     if (localEndpoint || modelEvents.every((event) => event.model.includes("mock"))) {

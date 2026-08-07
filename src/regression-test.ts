@@ -1,4 +1,5 @@
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
+import type { BrowserName } from "./types.js";
 
 export interface InteractionRegressionInput {
   controlId: string;
@@ -11,10 +12,12 @@ export interface InteractionRegressionRun {
   url: string;
   selector: string;
   timeoutMs?: number;
+  browserName?: BrowserName;
 }
 
 export async function interactionChangesAfterClick(input: InteractionRegressionRun): Promise<boolean> {
-  const browser = await chromium.launch({ headless: true });
+  const browserType = input.browserName === "firefox" ? firefox : input.browserName === "webkit" ? webkit : chromium;
+  const browser = await browserType.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await page.goto(input.url, { waitUntil: "domcontentloaded" });

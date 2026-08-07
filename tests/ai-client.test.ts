@@ -271,7 +271,14 @@ describe("AIClient", () => {
     });
 
     expect(requests).toBe(2);
-    expect(client.getUsageSummary().modelCalls).toBe(2);
+    expect(client.getUsageSummary()).toMatchObject({
+      modelCalls: 2,
+      cacheMisses: 2,
+      events: [
+        { success: false, error: "Model endpoint returned HTTP 503" },
+        { success: true }
+      ]
+    });
   });
 
   test("falls back when an OpenAI-compatible provider rejects JSON schema output", async () => {

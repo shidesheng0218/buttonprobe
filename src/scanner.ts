@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { chromium, type Browser, type Locator, type Page } from "playwright";
+import { chromium, firefox, webkit, type Browser, type BrowserType, type Locator, type Page } from "playwright";
 import { classifyDangerousControl } from "./danger.js";
-import type { ControlSignal, FailureClass, NetworkSafetyMode, PageScan, ScanControl, ScanResult } from "./types.js";
+import type { BrowserName, ControlSignal, FailureClass, NetworkSafetyMode, PageScan, ScanControl, ScanResult } from "./types.js";
 
 export interface ScanOptions {
   baseUrl: string;
@@ -14,6 +14,11 @@ export interface ScanOptions {
   storageState?: string;
   routes?: string[];
   replayHar?: string;
+  browserName?: BrowserName;
+}
+
+export function browserTypeForName(browserName: BrowserName = "chromium"): BrowserType {
+  return browserName === "firefox" ? firefox : browserName === "webkit" ? webkit : chromium;
 }
 
 interface ControlDescriptor {
@@ -349,7 +354,7 @@ export async function scanApplication(options: ScanOptions): Promise<ScanResult>
   const interactionTimeoutMs = options.interactionTimeoutMs ?? 750;
   await mkdir(join(options.outputDir, "screenshots"), { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await browserTypeForName(options.browserName).launch({ headless: true });
   try {
     const discoveryContext = await browser.newContext({
       viewport: { width: 1280, height: 800 },

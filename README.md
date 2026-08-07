@@ -16,7 +16,8 @@ npx buttonprobe fix http://localhost:5173 \
 npx buttonprobe verify http://localhost:5173 \
   --patch agent.diff \
   --test-command "npm test" \
-  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
+  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}" \
+  --browser chromium,firefox,webkit
 ```
 
 **5/5 viral cases passing. 10 independent React cases, 9 UI-verified repairs, Original repo pollution rate: 0.**
@@ -104,6 +105,29 @@ Status levels:
 | `rejected` | patch failed tests, UI verification, scenario checks, or regression protection |
 
 `--apply` only applies a diff after it reaches `ui-verified`.
+
+When more than one browser is requested, every requested browser must pass the target interaction, scenario checks, and same-page regression guard. A missing browser binary or a failed browser run leaves the patch at `test-verified`; it never upgrades the result by report metadata alone.
+
+## External Eval
+
+External benchmarks are opt-in because they clone public repositories and run only the manifest commands you provide. Every case must pin a Git commit and provide a local `patchFile`, `testCommand`, and `devCommand`.
+
+```bash
+buttonprobe eval external \
+  --manifest fixtures/external-react/manifest.json \
+  --allow-network
+```
+
+The command exits non-zero unless every case reaches `ui-verified`. Results retain a per-case proof, report, verified diff, and cleanup result under the requested output directory.
+
+The manifest includes a pinned third-party React/Vite case from `bitovi/trainings`. Reproduce that case alone while iterating on the benchmark:
+
+```bash
+buttonprobe eval external \
+  --manifest fixtures/external-react/manifest.json \
+  --allow-network \
+  --case bitovi/trainings-use-toggle
+```
 
 ## Why This Is Safe
 

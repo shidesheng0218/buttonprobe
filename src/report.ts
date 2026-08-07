@@ -6,7 +6,8 @@ import type {
   ModelDataManifest,
   RepairLoopResult,
   ScanResult,
-  SourceCandidateEvidence
+  SourceCandidateEvidence,
+  UIBrowserResult
 } from "./types.js";
 
 export interface ReportData {
@@ -15,6 +16,8 @@ export interface ReportData {
   usageSummary?: AIUsageSummary;
   modelDataManifest?: ModelDataManifest;
   aiError?: string;
+  originalCheckoutModified?: boolean;
+  browsers?: UIBrowserResult[];
 }
 
 function escapeHtml(value: string): string {
@@ -65,6 +68,13 @@ function repairTimeline(result: RepairLoopResult): string {
           attempt.ui?.behaviorContract
             ? `<p><strong>Behavior contract:</strong> ${attempt.ui.behaviorContract.passed ? "passed" : "failed"}
                ${attempt.ui.behaviorContract.failures.length ? ` · ${escapeHtml(attempt.ui.behaviorContract.failures.join("; "))}` : ""}</p>`
+            : ""
+        }
+        ${
+          attempt.ui?.browsers?.length
+            ? `<p><strong>Browser matrix:</strong> ${attempt.ui.browsers
+                .map((browser) => `${escapeHtml(browser.browser)}: ${escapeHtml(browser.status)}`)
+                .join(" · ")}</p>`
             : ""
         }
       </details>`
@@ -148,11 +158,12 @@ export async function writeReport(
   );
   const modelCalls = data.usageSummary?.modelCalls ??
     data.assessments.length + data.repairs.reduce((count, repair) => count + repair.result.attempts.length, 0);
-  const originalCheckoutModified = data.repairs.some((repair) =>
-    repair.result.attempts.some((attempt) => !attempt.reason.toLowerCase().includes("not modified"))
-  )
+  const originalCheckoutModified = data.originalCheckoutModified === undefined
     ? "unknown"
-    : "false";
+    : String(data.originalCheckoutModified);
+  const browsers = data.browsers ?? data.repairs.flatMap((repair) =>
+    repair.result.attempts.flatMap((attempt) => attempt.ui?.browsers ?? [])
+  );
 
   const html = `<!doctype html>
 <html lang="en">
@@ -207,6 +218,7 @@ export async function writeReport(
       <div class="metric">Cost estimate<strong>${data.usageSummary?.estimatedCostUsd === undefined ? "unknown" : `$${data.usageSummary.estimatedCostUsd.toFixed(4)}`}</strong></div>
     </div>
     <p>original checkout modified: ${originalCheckoutModified}</p>
+    ${browsers.length ? `<p><strong>Browser matrix:</strong> ${browsers.map((browser) => `${escapeHtml(browser.browser)}: ${escapeHtml(browser.status)}`).join(" · ")}</p>` : ""}
     ${data.modelDataManifest ? `<p>Model data: ${escapeHtml(data.modelDataManifest.endpointHost)} · ${data.modelDataManifest.sourceFiles.length} source file(s) · ${data.modelDataManifest.screenshotCount} screenshot(s) · redaction ${data.modelDataManifest.redactionApplied ? "enabled" : "disabled"}</p>` : ""}
     <p>baseline -&gt; locate -&gt; diagnose -&gt; validate -&gt; worktree test -&gt; counterfactual UI -&gt; verified.diff</p>
     <div class="commands">

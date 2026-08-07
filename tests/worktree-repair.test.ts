@@ -100,6 +100,52 @@ describe("worktree repair session", () => {
     expect(result.ui?.targetWorks).toBe(true);
   });
 
+  test("runs nested app commands in the worktree and reuses that app's dependencies", async () => {
+    const root = await createRepo();
+    const outputDir = await mkdtemp(join(tmpdir(), "buttonprobe-worktree-output-"));
+    const appDirectory = join(root, "examples", "nested-app");
+    await mkdir(join(appDirectory, "node_modules", "buttonprobe-marker"), { recursive: true });
+    await writeFile(join(appDirectory, "node_modules", "buttonprobe-marker", "ready"), "ok\n");
+    await writeFile(
+      join(appDirectory, "server.mjs"),
+      [
+        'import { createServer } from "node:http";',
+        'import { readFileSync } from "node:fs";',
+        'const port = Number(process.env.PORT);',
+        'createServer((_request, response) => {',
+        '  const source = readFileSync("../../src/App.tsx", "utf8");',
+        '  response.end(source.includes("enabled = true") ? "patched" : "original");',
+        '}).listen(port, "127.0.0.1");'
+      ].join("\n")
+    );
+    execFileSync("git", ["add", "examples/nested-app/server.mjs"], { cwd: root });
+    execFileSync(
+      "git",
+      ["-c", "user.name=ButtonProbe", "-c", "user.email=test@example.com", "commit", "-m", "nested app"],
+      { cwd: root }
+    );
+    const session = await createWorktreeRepairSession({
+      projectRoot: root,
+      outputDir,
+      workingDirectory: "examples/nested-app"
+    });
+
+    const result = await session.verifyPatch({
+      patch:
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1 +1 @@\n-export const enabled = false;\n+export const enabled = true;\n",
+      testCommand:
+        "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules/buttonprobe-marker/ready')||!fs.readFileSync('../../src/App.tsx','utf8').includes('enabled = true'))process.exit(1)\"",
+      devCommand: "node server.mjs",
+      verifyUI: async (baseUrl) => ({
+        targetWorks: (await fetch(baseUrl).then((response) => response.text())) === "patched",
+        regressions: []
+      })
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.evidenceStatus).toBe("ui-verified");
+  });
+
   test("keeps test-verified evidence when patched UI verification fails", async () => {
     const root = await createRepo();
     const outputDir = await mkdtemp(join(tmpdir(), "buttonprobe-worktree-output-"));
@@ -126,5 +172,39 @@ describe("worktree repair session", () => {
     expect(result.ok).toBe(false);
     expect(result.evidenceStatus).toBe("test-verified");
     expect(result.verifiedDiffPath).toBeTruthy();
+  });
+
+  test("runs UI verification for every requested browser before accepting", async () => {
+    const root = await createRepo();
+    const outputDir = await mkdtemp(join(tmpdir(), "buttonprobe-worktree-output-"));
+    await writeFile(
+      join(root, "server.mjs"),
+      'import { createServer } from "node:http"; createServer((_request, response) => response.end("ready")).listen(Number(process.env.PORT), "127.0.0.1");\n'
+    );
+    execFileSync("git", ["add", "server.mjs"], { cwd: root });
+    execFileSync(
+      "git",
+      ["-c", "user.name=ButtonProbe", "-c", "user.email=test@example.com", "commit", "-m", "server"],
+      { cwd: root }
+    );
+    const session = await createWorktreeRepairSession({ projectRoot: root, outputDir });
+    const browsers: string[] = [];
+
+    const result = await session.verifyPatch({
+      patch:
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1 +1 @@\n-export const enabled = false;\n+export const enabled = true;\n",
+      testCommand: "node -e \"process.exit(0)\"",
+      devCommand: "node server.mjs",
+      browsers: ["chromium", "firefox"],
+      verifyUI: async (_baseUrl, browserName) => {
+        browsers.push(browserName);
+        return { targetWorks: true, regressions: [], browsers: [] };
+      }
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.evidenceStatus).toBe("ui-verified");
+    expect(browsers).toEqual(["chromium", "firefox"]);
+    expect(result.ui?.browsers).toHaveLength(2);
   });
 });

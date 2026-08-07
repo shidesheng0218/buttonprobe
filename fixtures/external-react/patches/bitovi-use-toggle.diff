@@ -1,0 +1,63 @@
+diff --git a/custom-hooks/Exercise1/problem/src/App.tsx b/custom-hooks/Exercise1/problem/src/App.tsx
+index 515c6a2..b553810 100644
+--- a/custom-hooks/Exercise1/problem/src/App.tsx
++++ b/custom-hooks/Exercise1/problem/src/App.tsx
+@@ -1,8 +1,9 @@
+-import React from 'react';
+ import './App.css'
+ import Toggle from './Toggle'
++import { useToggle } from './useToggle'
+ 
+ function App() {
++  const { on, toggle } = useToggle()
+ 
+   return (
+       <section>
+@@ -13,11 +14,11 @@ function App() {
+         <button disabled={true} onClick={()=>{}}>
+           Turn Off
+         </button>
+-        <button onClick={()=>{}}>
++        <button onClick={toggle}>
+           Toggle
+         </button>
+      
+-        <Toggle toggle={()=>{}} on={true} />
++        <Toggle toggle={toggle} on={on} />
+       </section>
+   )
+ }
+diff --git a/custom-hooks/Exercise1/problem/src/Toggle.tsx b/custom-hooks/Exercise1/problem/src/Toggle.tsx
+index 8bd1b96..b63fc40 100644
+--- a/custom-hooks/Exercise1/problem/src/Toggle.tsx
++++ b/custom-hooks/Exercise1/problem/src/Toggle.tsx
+@@ -1,4 +1,4 @@
+-import React, { FC } from "react";
++import { type FC } from "react";
+ 
+ interface ToggleProps {
+   on: boolean;
+@@ -22,4 +22,4 @@ const Toggle: FC<ToggleProps> = ({on, toggle}) => {
+     </div>
+ )}
+ 
+-export default Toggle
+\ No newline at end of file
++export default Toggle
+diff --git a/custom-hooks/Exercise1/problem/src/useToggle.ts b/custom-hooks/Exercise1/problem/src/useToggle.ts
+index d0a810a..2faaa94 100644
+--- a/custom-hooks/Exercise1/problem/src/useToggle.ts
++++ b/custom-hooks/Exercise1/problem/src/useToggle.ts
+@@ -1,5 +1,8 @@
+-// write use toggle hook here. 
++import { useState } from "react";
+ 
+-export const useToggle =() => {
++export const useToggle = (initialState = false) => {
++  const [on, setOn] = useState(initialState);
++  const toggle = () => setOn((current) => !current);
+ 
+-}
+\ No newline at end of file
++  return { on, toggle };
++};

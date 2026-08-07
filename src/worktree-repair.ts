@@ -2,20 +2,22 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { runCommand } from "./git-workspace.js";
-import type { RepairEvidenceStatus, TestResult, UIVerification } from "./types.js";
+import type { BrowserName, RepairEvidenceStatus, TestResult, UIBrowserResult, UIVerification } from "./types.js";
 
 export interface WorktreeRepairSessionOptions {
   projectRoot: string;
   outputDir: string;
+  workingDirectory?: string;
 }
 
 export interface VerifyPatchOptions {
   patch: string;
   testCommand: string;
   devCommand?: string;
-  verifyUI?: (baseUrl: string) => Promise<UIVerification>;
+  browsers?: BrowserName[];
+  verifyUI?: (baseUrl: string, browserName: BrowserName) => Promise<UIVerification>;
 }
 
 export interface VerifyPatchResult {
@@ -32,7 +34,16 @@ export interface WorktreeRepairSession {
   verifyPatch(options: VerifyPatchOptions): Promise<VerifyPatchResult>;
 }
 
-async function createTempWorktree(projectRoot: string): Promise<string> {
+function resolveAppDirectory(projectRoot: string, workingDirectory?: string): string {
+  const root = resolve(projectRoot);
+  const appDirectory = resolve(root, workingDirectory ?? ".");
+  if (appDirectory !== root && !appDirectory.startsWith(`${root}${sep}`)) {
+    throw new Error("Working directory must stay inside the Git repository");
+  }
+  return appDirectory;
+}
+
+async function createTempWorktree(projectRoot: string, workingDirectory?: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), "buttonprobe-worktree-"));
   const worktreePath = join(parent, "repo");
   const result = await runCommand("git", ["worktree", "add", "--detach", worktreePath, "HEAD"], {
@@ -42,8 +53,8 @@ async function createTempWorktree(projectRoot: string): Promise<string> {
     await rm(parent, { recursive: true, force: true });
     throw new Error(`Failed to create repair worktree: ${result.stderr.trim()}`);
   }
-  const originalModules = join(projectRoot, "node_modules");
-  const worktreeModules = join(worktreePath, "node_modules");
+  const originalModules = join(resolveAppDirectory(projectRoot, workingDirectory), "node_modules");
+  const worktreeModules = join(resolveAppDirectory(worktreePath, workingDirectory), "node_modules");
   if (await access(originalModules).then(() => true).catch(() => false)) {
     await symlink(originalModules, worktreeModules, "dir").catch(() => undefined);
   }
@@ -116,7 +127,8 @@ export async function createWorktreeRepairSession(
   await mkdir(options.outputDir, { recursive: true });
   return {
     async verifyPatch(verifyOptions): Promise<VerifyPatchResult> {
-      const worktreePath = await createTempWorktree(options.projectRoot);
+      const worktreePath = await createTempWorktree(options.projectRoot, options.workingDirectory);
+      const worktreeAppDirectory = resolveAppDirectory(worktreePath, options.workingDirectory);
       try {
         const apply = await runCommand("git", ["apply", "-"], {
           cwd: worktreePath,
@@ -133,7 +145,7 @@ export async function createWorktreeRepairSession(
         }
 
         const test = await runCommand(verifyOptions.testCommand, [], {
-          cwd: worktreePath,
+          cwd: worktreeAppDirectory,
           shell: true,
           timeoutMs: 120_000
         });
@@ -161,10 +173,42 @@ export async function createWorktreeRepairSession(
 
         const port = await freePort();
         const baseUrl = `http://127.0.0.1:${port}`;
-        const server = startDevServer(verifyOptions.devCommand, worktreePath, port);
+        const server = startDevServer(verifyOptions.devCommand, worktreeAppDirectory, port);
         try {
           await waitForHttp(baseUrl);
-          const ui = await verifyOptions.verifyUI(baseUrl);
+          const browsers: BrowserName[] = verifyOptions.browsers?.length ? verifyOptions.browsers : ["chromium"];
+          const browserResults: UIBrowserResult[] = [];
+          let firstUi: UIVerification | undefined;
+          for (const browserName of browsers) {
+            try {
+              const browserUi = await verifyOptions.verifyUI(baseUrl, browserName);
+              firstUi ??= browserUi;
+              browserResults.push({
+                browser: browserName,
+                status: browserUi.targetWorks && browserUi.regressions.length === 0 ? "passed" : "failed",
+                targetWorks: browserUi.targetWorks,
+                regressions: browserUi.regressions,
+                ...(browserUi.behaviorContract && !browserUi.behaviorContract.passed
+                  ? { scenarioFailures: browserUi.behaviorContract.failures }
+                  : {}),
+                ...(browserUi.evidence?.afterScreenshot ? { screenshot: browserUi.evidence.afterScreenshot } : {})
+              });
+            } catch (error) {
+              browserResults.push({
+                browser: browserName,
+                status: "unavailable",
+                targetWorks: false,
+                regressions: [],
+                error: (error as Error).message
+              });
+            }
+          }
+          const ui: UIVerification = {
+            ...(firstUi ?? { targetWorks: false, regressions: [] }),
+            targetWorks: browserResults.every((result) => result.status === "passed"),
+            regressions: browserResults.flatMap((result) => result.regressions),
+            browsers: browserResults
+          };
           if (!ui.targetWorks || ui.regressions.length > 0) {
             return {
               ok: false,

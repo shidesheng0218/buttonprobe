@@ -20,12 +20,15 @@ export function runCommand(
     });
     let stdout = "";
     let stderr = "";
-    const timer =
-      options.timeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            child.kill("SIGTERM");
-          }, options.timeoutMs);
+    let timedOut = false;
+    let forceTimer: NodeJS.Timeout | undefined;
+    const timer = options.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+          forceTimer = setTimeout(() => child.kill("SIGKILL"), 1_000);
+        }, options.timeoutMs);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
@@ -37,7 +40,12 @@ export function runCommand(
     child.on("error", reject);
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve({ code: code ?? 1, stdout, stderr });
+      if (forceTimer) clearTimeout(forceTimer);
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr: timedOut ? `${stderr}\nCommand timed out after ${options.timeoutMs}ms` : stderr
+      });
     });
     child.stdin.end(options.input);
   });

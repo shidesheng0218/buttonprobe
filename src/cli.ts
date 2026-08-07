@@ -8,6 +8,7 @@ import { runPatchVerification } from "./patch-proof.js";
 import { releaseGatePassed, runExternalEval, runReactEval, runViralEval } from "./viral-eval.js";
 import { runButtonProbe } from "./workflow.js";
 import type { WorkflowOptions } from "./workflow.js";
+import type { BrowserName } from "./types.js";
 
 function integer(value: string): number {
   const parsed = Number.parseInt(value, 10);
@@ -34,6 +35,7 @@ function addSharedOptions(command: Command): Command {
     .option("--max-rounds <number>", "repair rounds per issue, capped at 3", integer)
     .option("--max-model-calls <number>", "maximum model requests per run", integer)
     .option("--max-fix-issues <number>", "maximum controls to repair per run", integer)
+    .option("--browser <list>", "browsers for UI verification, e.g. chromium,firefox,webkit", "chromium")
     .option("--profile <name>", "named business profile from buttonprobe.config.json")
     .option("--apply", "apply a verified repair diff back to the current checkout")
     .option("--no-images", "do not send screenshots to the model");
@@ -58,6 +60,14 @@ function setOption<K extends keyof WorkflowOptions>(
   if (value !== undefined) {
     target[key] = value;
   }
+}
+
+function parseBrowsers(raw: string): BrowserName[] {
+  const browsers = raw.split(",").map((item) => item.trim()).filter(Boolean);
+  if (!browsers.length || browsers.some((browser) => !["chromium", "firefox", "webkit"].includes(browser))) {
+    throw new Error("--browser must be a comma-separated list of chromium, firefox, and webkit");
+  }
+  return [...new Set(browsers)] as BrowserName[];
 }
 
 async function execute(url: string, command: Command, mode: CliMode): Promise<void> {
@@ -123,6 +133,7 @@ async function execute(url: string, command: Command, mode: CliMode): Promise<vo
   setOption(overrides, "repairMaxTokens", option<number>(command, "repairMaxTokens"));
   setOption(overrides, "maxModelCalls", option<number>(command, "maxModelCalls"));
   setOption(overrides, "maxFixIssues", option<number>(command, "maxFixIssues"));
+  setOption(overrides, "browsers", parseBrowsers(option<string>(command, "browser") ?? "chromium"));
   setOption(overrides, "profile", profile);
   setOption(overrides, "apply", option<boolean>(command, "apply"));
   setOption(overrides, "images", option<boolean>(command, "images"));
@@ -249,24 +260,52 @@ program
   .argument("[suite]", "benchmark suite to run", "viral")
   .option("-o, --output <directory>", "eval output directory")
   .option("--manifest <file>", "external eval manifest for eval external")
+  .option("--allow-network", "allow cloning public external benchmark repositories")
+  .option("--case <name>", "run one named fixture case")
+  .option("--fail-fast", "stop fixture eval after the first failed case")
+  .option("--timeout <milliseconds>", "per-case eval timeout", integer)
   .action(async (suite: string, _flags, command) => {
-    if (suite !== "viral" && suite !== "react" && suite !== "external") {
+    if (suite !== "viral" && suite !== "react" && suite !== "external" && suite !== "smoke") {
       throw new Error(`Unknown eval suite: ${suite}`);
     }
-    const flags = command.optsWithGlobals() as { output?: string; manifest?: string };
+    const flags = command.optsWithGlobals() as {
+      output?: string;
+      manifest?: string;
+      allowNetwork?: boolean;
+      case?: string;
+      failFast?: boolean;
+      timeout?: number;
+    };
     const output = resolve(flags.output ?? `.buttonprobe/eval/${suite}`);
     if (suite === "external") {
       if (!flags.manifest) throw new Error("buttonprobe eval external requires --manifest");
-      const result = await runExternalEval({ outputDir: output, manifestPath: resolve(flags.manifest) });
+      const result = await runExternalEval({
+        outputDir: output,
+        manifestPath: resolve(flags.manifest),
+        allowNetwork: Boolean(flags.allowNetwork),
+        ...(flags.case ? { caseName: flags.case } : {}),
+        ...(flags.timeout ? { timeoutMs: flags.timeout } : {})
+      });
       process.stdout.write(
         [
-          `ButtonProbe external eval manifest: ${result.summary.total} case(s) registered.`,
+          `ButtonProbe external eval: ${result.summary.passed}/${result.summary.total} passed.`,
           `Results: ${resolve(output, "eval-results.json")}`
         ].join("\n") + "\n"
       );
+      if (result.summary.total === 0 || result.summary.passed !== result.summary.total) process.exitCode = 1;
       return;
     }
-    const result = suite === "viral" ? await runViralEval({ outputDir: output }) : await runReactEval({ outputDir: output });
+    const evalOptions = {
+      outputDir: output,
+      ...(flags.case ? { caseSlug: flags.case } : {}),
+      ...(flags.failFast ? { failFast: true } : {}),
+      ...(flags.timeout ? { timeoutMs: flags.timeout } : {})
+    };
+    const result = suite === "viral"
+      ? await runViralEval(evalOptions)
+      : suite === "smoke"
+        ? await runViralEval({ ...evalOptions, caseSlug: flags.case ?? "empty-onclick" })
+        : await runReactEval(evalOptions);
     process.stdout.write(
       [
         `ButtonProbe ${suite} eval: ${result.summary.passed}/${result.summary.total} passed.`,
@@ -274,7 +313,7 @@ program
         `Results: ${resolve(output, "eval-results.json")}`
       ].join("\n") + "\n"
     );
-    if (!releaseGatePassed(result, suite)) process.exitCode = 1;
+    if (suite !== "smoke" && !releaseGatePassed(result, suite as "viral" | "react")) process.exitCode = 1;
   });
 
 program

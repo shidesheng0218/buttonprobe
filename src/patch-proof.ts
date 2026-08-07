@@ -13,6 +13,7 @@ import type {
   RepairAttemptRecord,
   RepairLoopResult,
   ScanControl,
+  BrowserName,
   UIVerification
 } from "./types.js";
 
@@ -29,6 +30,8 @@ export interface PatchVerificationOptions {
   profile?: BusinessProfile;
   scenarios?: Record<string, import("./types.js").ScenarioContract>;
   browsers?: Array<"chromium" | "firefox" | "webkit">;
+  targetSelector?: string;
+  workingDirectory?: string;
 }
 
 export interface PatchProofResult {
@@ -56,8 +59,10 @@ function profileScanOptions(profile: BusinessProfile | undefined): {
   };
 }
 
-function firstTarget(controls: ScanControl[]): ScanControl | undefined {
-  return controls.find((control) => control.verdict === "INERT" || control.verdict === "CRASHED" || control.verdict === "AMBIGUOUS");
+function firstTarget(controls: ScanControl[], targetSelector?: string): ScanControl | undefined {
+  const failing = controls.filter((control) => control.verdict === "INERT" || control.verdict === "CRASHED" || control.verdict === "AMBIGUOUS");
+  if (!targetSelector) return failing[0];
+  return failing.find((control) => control.selector === targetSelector || control.id === targetSelector);
 }
 
 function scenarioForControl(
@@ -110,7 +115,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     ...profileScanOptions(options.profile)
   });
   const baselineControls = baseline.pages[0]?.controls ?? [];
-  const target = firstTarget(baselineControls);
+  const target = firstTarget(baselineControls, options.targetSelector);
   const baselineWorking = new Set(
     baselineControls.filter((control) => control.verdict === "WORKS").map((control) => control.id)
   );
@@ -129,14 +134,19 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
       selector: target.selector,
       timeoutMs: interactionTimeoutMs
     }));
-    const session = await createWorktreeRepairSession({ projectRoot, outputDir });
+    const session = await createWorktreeRepairSession({
+      projectRoot,
+      outputDir,
+      ...(options.workingDirectory ? { workingDirectory: options.workingDirectory } : {})
+    });
     const verified = await session.verifyPatch({
       patch,
       testCommand: options.testCommand,
       ...(options.devCommand
         ? {
             devCommand: options.devCommand,
-            verifyUI: async (baseUrl: string) => {
+            browsers: options.browsers ?? ["chromium"],
+            verifyUI: async (baseUrl: string, browserName: BrowserName) => {
               const originalUrl = new URL(target.pageUrl);
               const verificationUrl = new URL(`${originalUrl.pathname}${originalUrl.search}`, baseUrl).href;
               const verification = await scanApplication({
@@ -145,6 +155,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
                 maxPages: 1,
                 interactionTimeoutMs,
                 unsafe: options.unsafe ?? false,
+                browserName,
                 ...profileScanOptions(options.profile)
               });
               const currentControls = verification.pages[0]?.controls ?? [];
@@ -152,7 +163,8 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
               const patchedPassed = await interactionChangesAfterClick({
                 url: verificationUrl,
                 selector: target.selector,
-                timeoutMs: interactionTimeoutMs
+                timeoutMs: interactionTimeoutMs,
+                browserName
               });
               const scenario = scenarioForControl(target.id, target.selector, target.pageUrl, options.scenarios);
               const behaviorContract = scenario
@@ -161,7 +173,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
                     scenario,
                     timeoutMs: interactionTimeoutMs,
                     allowMutations: options.profile?.networkMode === "sandbox",
-                    browserName: options.browsers?.[0] ?? "chromium"
+                    browserName
                   })
                 : undefined;
               const regressions = currentControls
@@ -218,6 +230,10 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     evidenceStatus: status === "ui-verified" ? "ui-verified" : status === "test-verified" ? "test-verified" : "failed",
     ...(ui?.counterfactual?.baselineFailed && ui.counterfactual.patchedPassed ? { counterfactualVerified: true } : {})
   };
+  const workspaceAfter = await inspectGitWorkspace(projectRoot);
+  const originalCheckoutModified = options.apply
+    ? !workspaceAfter.clean
+    : workspaceAfter.status !== workspaceBefore.status;
   const reportPath = await writeReport(outputDir, baseline, {
     assessments: [],
     repairs: target ? [{ controlId: target.id, result: repairResult }] : [],
@@ -227,12 +243,10 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
       sourceFiles: [],
       screenshotCount: 0,
       redactionApplied: true
-    }
+    },
+    originalCheckoutModified,
+    ...(ui?.browsers ? { browsers: ui.browsers } : {})
   });
-  const workspaceAfter = await inspectGitWorkspace(projectRoot);
-  const originalCheckoutModified = options.apply
-    ? !workspaceAfter.clean
-    : workspaceAfter.status !== workspaceBefore.status;
   const proofPath = join(outputDir, "proof.json");
   const proof = {
     schemaVersion: 1,

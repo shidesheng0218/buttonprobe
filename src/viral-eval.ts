@@ -7,10 +7,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./git-workspace.js";
 import { locateSourceCandidates } from "./source-locator.js";
+import { runPatchVerification } from "./patch-proof.js";
 import type { RepairEvidenceStatus, RepairIssue, SourceCandidate } from "./types.js";
 import { runButtonProbe } from "./workflow.js";
 
-export type EvalFailureStage = "scan" | "locate" | "model" | "validate" | "test" | "ui" | "cleanup" | null;
+export type EvalFailureStage = "clone" | "setup" | "scan" | "locate" | "model" | "validate" | "test" | "ui" | "cleanup" | null;
 
 export interface ViralBenchmark {
   name: string;
@@ -24,6 +25,15 @@ export interface ViralBenchmark {
   artifactDir: string;
   residueFiles: string[];
   sourceCandidate: Pick<SourceCandidate, "path" | "score" | "reason"> | null;
+  sourceMapping: {
+    candidateCount: number;
+    topCandidate?: string;
+    expectedSource: string;
+    top1Correct: boolean;
+    score: number | null;
+    strongIdentity: boolean;
+    eventChainResolved: boolean;
+  };
   failureStage: EvalFailureStage;
   verifiedDiffPath: string;
   testLogPath: string;
@@ -47,23 +57,35 @@ export interface ViralEvalResult {
     passed: number;
     originalRepoPollutionRate: number;
     failedPatchResidueCount: number;
+    sourceTop1Accuracy: number;
+    lowConfidenceRejections: number;
   };
   benchmarks: ViralBenchmark[];
 }
 
 export interface ViralEvalOptions {
   outputDir: string;
+  caseSlug?: string;
+  failFast?: boolean;
+  timeoutMs?: number;
 }
 
 export interface ExternalEvalOptions {
   outputDir: string;
   manifestPath: string;
+  allowNetwork?: boolean;
+  timeoutMs?: number;
+  caseName?: string;
 }
 
 export interface ExternalEvalCase {
   name: string;
   repo: string;
-  commit?: string;
+  commit: string;
+  appDirectory?: string;
+  patchFile?: string;
+  baseUrl?: string;
+  target?: string;
   setup?: string;
   devCommand?: string;
   testCommand?: string;
@@ -87,11 +109,16 @@ export interface ExternalEvalResult {
   cases: Array<{
     name: string;
     repo: string;
-    commit?: string;
+    commit: string;
     artifactDir: string;
-    status: "pending" | "failed";
+    status: "passed" | "failed" | "skipped";
     failureStage: EvalFailureStage;
     reason: string;
+    evidenceStatus: RepairEvidenceStatus;
+    originalCheckoutModified: boolean;
+    residueFiles: string[];
+    proofPath: string;
+    reportPath: string;
   }>;
 }
 
@@ -110,6 +137,7 @@ interface CaseRunOptions {
   outputDir: string;
   fixturePrefix: string;
   dirty?: boolean;
+  timeoutMs?: number;
 }
 
 interface CaseRunResult {
@@ -188,6 +216,18 @@ function stopProcess(child: ChildProcess): Promise<void> {
       if (child.exitCode === null) child.kill("SIGKILL");
     }, 1000).unref();
   });
+}
+
+async function cloneExternalRepository(repo: string, checkout: string, timeoutMs: number): Promise<void> {
+  let lastError = "clone failed";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await rm(checkout, { recursive: true, force: true });
+    const clone = await runCommand("git", ["clone", "--no-checkout", repo, checkout], { cwd: dirname(checkout), timeoutMs });
+    if (clone.code === 0) return;
+    lastError = `${clone.stderr || clone.stdout}`.trim() || lastError;
+    if (attempt < 2) await new Promise((resolveDelay) => setTimeout(resolveDelay, 500 * (attempt + 1)));
+  }
+  throw new Error(`Clone failed after 3 attempts: ${lastError}`);
 }
 
 async function prepareCase(slug: string): Promise<{
@@ -272,9 +312,9 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
   const app = startProcess(process.execPath, ["fixture-server.mjs"], state.root, { PORT: String(appPort) });
   const model = startProcess(process.execPath, ["fixture-model.mjs"], state.root, { PORT: String(modelPort) });
   try {
-    await waitForHttp(`http://127.0.0.1:${appPort}`);
-    await waitForHttp(`http://127.0.0.1:${modelPort}/v1/chat/completions`);
-    const workflow = await runButtonProbe({
+    await waitForHttp(`http://127.0.0.1:${appPort}`, options.timeoutMs);
+    await waitForHttp(`http://127.0.0.1:${modelPort}/v1/chat/completions`, options.timeoutMs);
+    const workflowPromise = runButtonProbe({
       baseUrl: `http://127.0.0.1:${appPort}`,
       outputDir: artifactRoot,
       projectRoot: state.root,
@@ -291,6 +331,12 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       model: "buttonprobe-eval-mock",
       maxFixIssues: 1
     });
+    const workflow = options.timeoutMs
+      ? await Promise.race([
+          workflowPromise,
+          new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(`Eval case timed out after ${options.timeoutMs}ms`)), options.timeoutMs))
+        ])
+      : await workflowPromise;
     const target = workflow.scan.pages.flatMap((page) => page.controls).find((control) => control.id === state.fixture.testId);
     if (!target) throw new Error(`Eval case ${options.slug} did not expose target control ${state.fixture.testId}`);
     const issue: RepairIssue = {
@@ -300,7 +346,8 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       verdict: target.verdict === "WORKS" ? "AMBIGUOUS" : target.verdict === "CRASHED" ? "CRASHED" : "INERT",
       evidence: target.evidence
     };
-    const sourceCandidate = (await locateSourceCandidates(state.root, issue))[0];
+    const sourceCandidates = await locateSourceCandidates(state.root, issue);
+    const sourceCandidate = sourceCandidates[0];
     const repair = workflow.repairs.find((item) => item.controlId === state.fixture.testId)?.result;
     const attempt = repair?.attempts.find((candidate) => candidate.decision === "accepted") ?? repair?.attempts.at(-1);
     const evidenceStatus: RepairEvidenceStatus = state.fixture.normal
@@ -361,6 +408,15 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
         artifactDir: relativeArtifact(options.outputDir, artifactRoot),
         residueFiles,
         sourceCandidate: candidateSummary(sourceCandidate),
+        sourceMapping: {
+          candidateCount: sourceCandidates.length,
+          ...(sourceCandidate ? { topCandidate: sourceCandidate.path } : {}),
+          expectedSource: "src/App.tsx",
+          top1Correct: sourceCandidate?.path === "src/App.tsx",
+          score: sourceCandidate?.score ?? null,
+          strongIdentity: Boolean(sourceCandidate?.strongIdentity),
+          eventChainResolved: Boolean(sourceCandidate?.eventChain)
+        },
         failureStage: outcome === "fail" ? failureStageFor(evidenceStatus, Boolean(sourceCandidate)) : null,
         verifiedDiffPath,
         testLogPath: relativeArtifact(options.outputDir, testLogPath),
@@ -382,8 +438,24 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
 async function runCases(
   cases: Array<{ slug: string; dirty?: boolean }>,
   outputDir: string,
-  fixturePrefix: string
+  fixturePrefix: string,
+  options: Pick<ViralEvalOptions, "failFast" | "timeoutMs"> = {}
 ): Promise<CaseRunResult[]> {
+  if (options.failFast) {
+    const results: CaseRunResult[] = [];
+    for (const item of cases) {
+      const result = await runCase({
+        slug: item.slug,
+        outputDir,
+        fixturePrefix,
+        ...(item.dirty ? { dirty: true } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {})
+      });
+      results.push(result);
+      if (result.benchmark.outcome === "fail") break;
+    }
+    return results;
+  }
   const results = new Array<CaseRunResult>(cases.length);
   let nextIndex = 0;
   async function worker(): Promise<void> {
@@ -396,7 +468,8 @@ async function runCases(
         slug: item.slug,
         outputDir,
         fixturePrefix,
-        ...(item.dirty ? { dirty: true } : {})
+        ...(item.dirty ? { dirty: true } : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {})
       });
     }
   }
@@ -422,7 +495,11 @@ function assembleResult(fixture: string, startedAt: number, runs: CaseRunResult[
       total: benchmarks.length,
       passed: benchmarks.filter((benchmark) => benchmark.outcome === "pass").length,
       originalRepoPollutionRate: benchmarks.length ? polluted / benchmarks.length : 0,
-      failedPatchResidueCount: benchmarks.reduce((total, benchmark) => total + benchmark.residueFiles.length, 0)
+      failedPatchResidueCount: benchmarks.reduce((total, benchmark) => total + benchmark.residueFiles.length, 0),
+      sourceTop1Accuracy: benchmarks.length
+        ? benchmarks.filter((benchmark) => benchmark.sourceMapping.top1Correct).length / benchmarks.length
+        : 0,
+      lowConfidenceRejections: benchmarks.filter((benchmark) => benchmark.sourceMapping.score !== null && benchmark.sourceMapping.score < 25).length
     },
     benchmarks
   };
@@ -463,20 +540,30 @@ export async function runViralEval(options: ViralEvalOptions): Promise<ViralEval
   const startedAt = Date.now();
   const outputDir = resolve(options.outputDir);
   await mkdir(outputDir, { recursive: true });
-  const runs = await runCases(
-    [
+  const allCases = [
       { slug: "empty-onclick" },
       { slug: "wrong-setter" },
       { slug: "missing-route" },
       { slug: "normal-button" },
       { slug: "empty-onclick", dirty: true }
-    ],
+    ];
+  const selectedCases = options.caseSlug
+    ? allCases.filter((item) => options.caseSlug === "dirty-worktree" ? item.dirty : item.slug === options.caseSlug && !item.dirty)
+    : allCases;
+  if (!selectedCases.length) throw new Error(`Unknown viral eval case: ${options.caseSlug}`);
+  const runs = await runCases(
+    selectedCases,
     outputDir,
-    viralFixture
+    viralFixture,
+    options
   );
-  runs[1]!.benchmark.name = "wrong state update";
-  runs[2]!.benchmark.name = "missing navigation";
-  runs[3]!.benchmark.name = "normal button unchanged";
+  for (const [index, item] of selectedCases.entries()) {
+    const run = runs[index];
+    if (!run) continue;
+    if (item.slug === "wrong-setter") run.benchmark.name = "wrong state update";
+    if (item.slug === "missing-route") run.benchmark.name = "missing navigation";
+    if (item.slug === "normal-button") run.benchmark.name = "normal button unchanged";
+  }
   return writeEvalResult(assembleResult(viralFixture, startedAt, runs), outputDir);
 }
 
@@ -484,7 +571,11 @@ export async function runReactEval(options: ViralEvalOptions): Promise<ViralEval
   const startedAt = Date.now();
   const outputDir = resolve(options.outputDir);
   await mkdir(outputDir, { recursive: true });
-  const runs = await runCases(reactCaseSlugs.map((slug) => ({ slug })), outputDir, reactFixture);
+  const selectedCases = options.caseSlug
+    ? reactCaseSlugs.filter((slug) => slug === options.caseSlug).map((slug) => ({ slug }))
+    : reactCaseSlugs.map((slug) => ({ slug }));
+  if (!selectedCases.length) throw new Error(`Unknown React eval case: ${options.caseSlug}`);
+  const runs = await runCases(selectedCases, outputDir, reactFixture, options);
   return writeEvalResult(assembleResult(reactFixture, startedAt, runs), outputDir);
 }
 
@@ -502,10 +593,17 @@ function assertExternalManifest(value: unknown): { cases: ExternalEvalCase[] } {
       const item = rawCase as Record<string, unknown>;
       if (typeof item.name !== "string" || !item.name) throw new Error(`External eval case ${index} requires name`);
       if (typeof item.repo !== "string" || !item.repo) throw new Error(`External eval case ${index} requires repo`);
+      if (typeof item.commit !== "string" || !item.commit) {
+        throw new Error(`External eval case ${index} requires a pinned commit`);
+      }
       return {
         name: item.name,
         repo: item.repo,
-        ...(typeof item.commit === "string" ? { commit: item.commit } : {}),
+        commit: item.commit,
+        ...(typeof item.appDirectory === "string" ? { appDirectory: item.appDirectory } : {}),
+        ...(typeof item.patchFile === "string" ? { patchFile: item.patchFile } : {}),
+        ...(typeof item.baseUrl === "string" ? { baseUrl: item.baseUrl } : {}),
+        ...(typeof item.target === "string" ? { target: item.target } : {}),
         ...(typeof item.setup === "string" ? { setup: item.setup } : {}),
         ...(typeof item.devCommand === "string" ? { devCommand: item.devCommand } : {}),
         ...(typeof item.testCommand === "string" ? { testCommand: item.testCommand } : {}),
@@ -519,21 +617,101 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
   const startedAt = Date.now();
   const outputDir = resolve(options.outputDir);
   await mkdir(outputDir, { recursive: true });
+  if (!options.allowNetwork) {
+    throw new Error("External eval executes network-backed repositories; rerun with --allow-network");
+  }
   const manifest = assertExternalManifest(JSON.parse(await readFile(options.manifestPath, "utf8")));
-  const cases = [];
-  for (const item of manifest.cases) {
+  const manifestRoot = dirname(resolve(options.manifestPath));
+  const selectedCases = options.caseName
+    ? manifest.cases.filter((item) => item.name === options.caseName)
+    : manifest.cases;
+  if (!selectedCases.length) throw new Error(`Unknown external eval case: ${options.caseName}`);
+  const cases: ExternalEvalResult["cases"] = [];
+  for (const item of selectedCases) {
     const artifactSlug = item.name.replace(/[^a-zA-Z0-9_-]/g, "-");
     const artifactDir = join("cases", artifactSlug);
-    await mkdir(join(outputDir, artifactDir), { recursive: true });
-    cases.push({
+    const caseOutput = join(outputDir, artifactDir);
+    await mkdir(caseOutput, { recursive: true });
+    const baseCase = {
       name: item.name,
       repo: item.repo,
-      ...(item.commit ? { commit: item.commit } : {}),
+      commit: item.commit,
       artifactDir,
-      status: "pending" as const,
-      failureStage: null,
-      reason: "External benchmark case registered. Clone/setup/repair execution is intentionally separate from packaged CI to avoid network-dependent false greens."
-    });
+      status: "failed" as const,
+      failureStage: null as EvalFailureStage,
+      reason: "External case did not run",
+      evidenceStatus: "failed" as RepairEvidenceStatus,
+      originalCheckoutModified: false,
+      residueFiles: [] as string[],
+      proofPath: relative(outputDir, join(caseOutput, "proof.json")),
+      reportPath: relative(outputDir, join(caseOutput, "report.html"))
+    };
+    if (!item.patchFile || !item.testCommand || !item.devCommand) {
+      cases.push({
+        ...baseCase,
+        status: "skipped",
+        reason: "External case requires patchFile, testCommand, and devCommand"
+      });
+      continue;
+    }
+    let tempRoot: string | undefined;
+    let server: ChildProcess | undefined;
+    let failureStage: EvalFailureStage = "clone";
+    try {
+      const repoUrl = new URL(item.repo);
+      if (repoUrl.protocol !== "https:" || repoUrl.hostname !== "github.com") {
+        throw new Error("External eval only allows public https://github.com repositories");
+      }
+      tempRoot = await mkdtemp(join(tmpdir(), "buttonprobe-external-"));
+      const checkout = join(tempRoot, "repo");
+      const timeoutMs = options.timeoutMs ?? 120_000;
+      await cloneExternalRepository(item.repo, checkout, timeoutMs);
+      const checkoutResult = await runCommand("git", ["checkout", "--detach", item.commit], { cwd: checkout, timeoutMs });
+      if (checkoutResult.code !== 0) throw new Error(`Pinned commit checkout failed: ${checkoutResult.stderr.trim()}`);
+      const appDirectory = resolve(checkout, item.appDirectory ?? ".");
+      if (appDirectory !== checkout && !appDirectory.startsWith(`${checkout}/`)) {
+        throw new Error("External appDirectory must stay inside the cloned repository");
+      }
+      failureStage = "setup";
+      if (item.setup) {
+        const setup = await runCommand(item.setup, [], { cwd: appDirectory, shell: true, timeoutMs });
+        if (setup.code !== 0) throw new Error(`Setup failed: ${(setup.stderr || setup.stdout).trim()}`);
+      }
+      const port = await freePort();
+      failureStage = "scan";
+      const baseUrl = item.baseUrl?.replaceAll("{port}", String(port)) ?? `http://127.0.0.1:${port}`;
+      server = startProcess("sh", ["-lc", item.devCommand.replaceAll("{port}", String(port))], appDirectory, {
+        PORT: String(port),
+        BUTTONPROBE_PORT: String(port)
+      });
+      await waitForHttp(baseUrl, timeoutMs);
+      const patchPath = resolve(manifestRoot, item.patchFile);
+      failureStage = "test";
+      const proof = await runPatchVerification({
+        baseUrl,
+        patchPath,
+        projectRoot: checkout,
+        outputDir: caseOutput,
+        testCommand: item.testCommand,
+        devCommand: item.devCommand,
+        ...(item.appDirectory ? { workingDirectory: item.appDirectory } : {}),
+        ...(item.target ? { targetSelector: item.target } : {})
+      });
+      const passed = proof.status === "ui-verified" && !proof.originalCheckoutModified;
+      cases.push({
+        ...baseCase,
+        status: passed ? "passed" : "failed",
+        failureStage: passed ? null : proof.status === "test-verified" ? "ui" : "test",
+        reason: proof.reason,
+        evidenceStatus: proof.status === "ui-verified" ? "ui-verified" : proof.status === "test-verified" ? "test-verified" : "failed",
+        originalCheckoutModified: proof.originalCheckoutModified
+      });
+    } catch (error) {
+      cases.push({ ...baseCase, reason: (error as Error).message, failureStage });
+    } finally {
+      if (server) await stopProcess(server);
+      if (tempRoot) await rm(tempRoot, { recursive: true, force: true });
+    }
   }
   const result: ExternalEvalResult = {
     schemaVersion: 1,
@@ -542,9 +720,9 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
     durationMs: Date.now() - startedAt,
     summary: {
       total: cases.length,
-      passed: 0,
+      passed: cases.filter((item) => item.status === "passed").length,
       sourceTop1Accuracy: null,
-      uiVerifiedRate: null,
+      uiVerifiedRate: cases.length ? cases.filter((item) => item.evidenceStatus === "ui-verified").length / cases.length : null,
       falseAcceptRate: 0,
       originalRepoPollutionRate: 0,
       rollbackResidue: 0

@@ -110,6 +110,21 @@ test("writes a self-contained report with verdicts and repair history", async ()
               ui: {
                 targetWorks: true,
                 regressions: [],
+                browsers: [
+                  {
+                    browser: "chromium",
+                    status: "passed",
+                    targetWorks: true,
+                    regressions: []
+                  },
+                  {
+                    browser: "firefox",
+                    status: "unavailable",
+                    targetWorks: false,
+                    regressions: [],
+                    error: "browser executable missing"
+                  }
+                ],
                 counterfactual: {
                   baselineFailed: true,
                   patchedPassed: true
@@ -140,7 +155,8 @@ test("writes a self-contained report with verdicts and repair history", async ()
       sourceFiles: ["src/App.tsx"],
       screenshotCount: 2,
       redactionApplied: true
-    }
+    },
+    originalCheckoutModified: false
   });
   const html = await readFile(path, "utf8");
 
@@ -150,6 +166,9 @@ test("writes a self-contained report with verdicts and repair history", async ()
   expect(html).toContain("Verified diffs");
   expect(html).toContain("Model calls");
   expect(html).toContain("original checkout modified: false");
+  expect(html).toContain("Browser matrix");
+  expect(html).toContain("chromium: passed");
+  expect(html).toContain("firefox: unavailable");
   expect(html).toContain("baseline -&gt; locate -&gt; diagnose -&gt; validate -&gt; worktree test -&gt; counterfactual UI -&gt; verified.diff");
   expect(html).toContain("Apply verified diff");
   expect(html).toContain("src/App.tsx score 26");

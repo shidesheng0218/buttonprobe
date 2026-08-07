@@ -1,5 +1,5 @@
 import { chromium, firefox, webkit } from "playwright";
-import type { BehaviorContract, BehaviorContractVerification, ScenarioContract } from "./types.js";
+import type { BehaviorContract, BehaviorContractVerification, BrowserName, ScenarioContract } from "./types.js";
 
 export interface BehaviorContractRun {
   url: string;
@@ -7,6 +7,7 @@ export interface BehaviorContractRun {
   contract: BehaviorContract;
   timeoutMs?: number;
   allowMutations?: boolean;
+  browserName?: BrowserName;
 }
 
 export interface ScenarioContractRun {
@@ -136,7 +137,8 @@ export async function verifyBehaviorContract(input: BehaviorContractRun): Promis
     baseUrl: input.url,
     scenario: behaviorContractToScenario(input.selector, input.selector, `${routeUrl.pathname}${routeUrl.search}`, input.contract),
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-    ...(input.allowMutations !== undefined ? { allowMutations: input.allowMutations } : {})
+    ...(input.allowMutations !== undefined ? { allowMutations: input.allowMutations } : {}),
+    ...(input.browserName ? { browserName: input.browserName } : {})
   });
   return {
     passed: result.passed,

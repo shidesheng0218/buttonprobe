@@ -100,7 +100,7 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toMatch(/[89]\/10/);
   }, 30_000);
 
-  test("eval external registers manifest cases without claiming fake passes", async () => {
+  test("eval external requires explicit network execution", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-external-eval-"));
     const manifest = join(cwd, "manifest.json");
     await import("node:fs/promises").then(({ writeFile }) =>
@@ -111,12 +111,48 @@ describe("buttonprobe CLI", () => {
     );
     const result = await runCli(["eval", "external", "--manifest", manifest, "--output", join(cwd, "out")]);
 
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("1 case(s) registered");
-    const written = JSON.parse(await readFile(join(cwd, "out", "eval-results.json"), "utf8"));
-    expect(written.fixture).toBe("external");
-    expect(written.summary.passed).toBe(0);
-    expect(written.cases[0].status).toBe("pending");
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("--allow-network");
+  });
+
+  test("rejects external eval manifests without pinned commits", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-external-commit-"));
+    const manifest = join(cwd, "manifest.json");
+    await import("node:fs/promises").then(({ writeFile }) =>
+      writeFile(manifest, JSON.stringify({ cases: [{ name: "demo", repo: "https://github.com/example/demo" }] }))
+    );
+
+    const result = await runCli([
+      "eval",
+      "external",
+      "--manifest",
+      manifest,
+      "--output",
+      join(cwd, "out"),
+      "--allow-network"
+    ]);
+
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("commit");
+  });
+
+  test("does not accept an empty external benchmark as a passing release gate", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-external-empty-"));
+    const manifest = join(cwd, "manifest.json");
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(manifest, JSON.stringify({ cases: [] })));
+
+    const result = await runCli([
+      "eval",
+      "external",
+      "--manifest",
+      manifest,
+      "--output",
+      join(cwd, "out"),
+      "--allow-network"
+    ]);
+
+    expect(result.code).not.toBe(0);
+    expect(result.output).toContain("0/0 passed");
   });
 
   test("init provider presets write endpoint defaults without API keys", async () => {

@@ -149,12 +149,25 @@ export interface TestResult {
 export interface UIVerification {
   targetWorks: boolean;
   regressions: string[];
+  browsers?: UIBrowserResult[];
   evidence?: ControlEvidence;
   counterfactual?: {
     baselineFailed: boolean;
     patchedPassed: boolean;
   };
   behaviorContract?: BehaviorContractVerification;
+}
+
+export type BrowserName = "chromium" | "firefox" | "webkit";
+
+export interface UIBrowserResult {
+  browser: BrowserName;
+  status: "passed" | "failed" | "unavailable";
+  targetWorks: boolean;
+  regressions: string[];
+  scenarioFailures?: string[];
+  screenshot?: string;
+  error?: string;
 }
 
 export interface RepairRequestContext {

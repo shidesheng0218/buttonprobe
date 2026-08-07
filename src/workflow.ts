@@ -24,7 +24,8 @@ import type {
   ScanResult,
   SourceCandidate,
   SourceCandidateEvidence,
-  BusinessProfile
+  BusinessProfile,
+  BrowserName
 } from "./types.js";
 
 export interface WorkflowOptions {
@@ -54,6 +55,7 @@ export interface WorkflowOptions {
   profile?: BusinessProfile | undefined;
   behaviorContracts?: Record<string, import("./types.js").BehaviorContract> | undefined;
   scenarios?: Record<string, import("./types.js").ScenarioContract> | undefined;
+  browsers?: BrowserName[] | undefined;
 }
 
 export interface WorkflowResult {
@@ -216,7 +218,8 @@ async function requestVerifiedPatchInWorktree(
   profile: BusinessProfile | undefined,
   maxRounds: number,
   behaviorContracts: WorkflowOptions["behaviorContracts"],
-  scenarios: WorkflowOptions["scenarios"]
+  scenarios: WorkflowOptions["scenarios"],
+  browsers: BrowserName[]
 ): Promise<RepairLoopResult> {
   const sources = await locateSourceCandidates(projectRoot, issue);
   if (sources.length === 0) {
@@ -281,7 +284,8 @@ async function requestVerifiedPatchInWorktree(
       ...(devCommand
         ? {
             devCommand,
-            verifyUI: async (baseUrl: string) => {
+            browsers,
+            verifyUI: async (baseUrl: string, browserName: BrowserName) => {
               const originalUrl = new URL(issue.pageUrl);
               const verificationUrl = new URL(`${originalUrl.pathname}${originalUrl.search}`, baseUrl).href;
               const verificationDir = join(roundOutputDir, "ui-verification");
@@ -291,12 +295,18 @@ async function requestVerifiedPatchInWorktree(
                 maxPages: 1,
                 interactionTimeoutMs,
                 unsafe,
+                browserName,
                 ...profileScanOptions(profile)
               });
               const currentControls = verification.pages[0]?.controls ?? [];
               const target = currentControls.find((candidate) => candidate.id === issue.controlId);
               const patchedPassed = issue.selector
-                ? await interactionChangesAfterClick({ url: verificationUrl, selector: issue.selector, timeoutMs: interactionTimeoutMs })
+                ? await interactionChangesAfterClick({
+                    url: verificationUrl,
+                    selector: issue.selector,
+                    timeoutMs: interactionTimeoutMs,
+                    browserName
+                  })
                 : false;
               const contract = behaviorContracts?.[issue.controlId];
               const scenario = scenarioForControl(issue.controlId, issue.selector, issue.pageUrl, scenarios);
@@ -305,7 +315,8 @@ async function requestVerifiedPatchInWorktree(
                     baseUrl,
                     scenario,
                     timeoutMs: interactionTimeoutMs,
-                    allowMutations: profile?.networkMode === "sandbox"
+                    allowMutations: profile?.networkMode === "sandbox",
+                    browserName
                   })
                 : contract && issue.selector
                   ? await verifyBehaviorContract({
@@ -313,7 +324,8 @@ async function requestVerifiedPatchInWorktree(
                       selector: issue.selector,
                       contract,
                       timeoutMs: interactionTimeoutMs,
-                      allowMutations: profile?.networkMode === "sandbox"
+                      allowMutations: profile?.networkMode === "sandbox",
+                      browserName
                     })
                   : undefined;
               const regressions = currentControls
@@ -506,7 +518,8 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
             options.profile,
             options.maxRounds,
             options.behaviorContracts,
-            options.scenarios
+            options.scenarios,
+            options.browsers ?? ["chromium"]
           );
           if (result.evidenceStatus === "ui-verified") {
             result.regressionTestPath = await writeRegressionTest(outputDir, control);
@@ -671,12 +684,17 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
       : 0,
     redactionApplied: true
   };
+  const finalWorkspace = await inspectGitWorkspace(projectRoot);
+  const originalCheckoutModified = initialWorkspace
+    ? finalWorkspace.status !== initialWorkspace.status
+    : false;
 
   const reportPath = await writeReport(outputDir, scan, {
     assessments,
     repairs,
     usageSummary,
     modelDataManifest,
+    originalCheckoutModified,
     ...(aiError ? { aiError } : {})
   });
   await writeFile(join(outputDir, "scan.json"), JSON.stringify(scan, null, 2));

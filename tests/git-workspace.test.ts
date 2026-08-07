@@ -51,4 +51,12 @@ describe("git workspace operations", () => {
     expect(result.passed).toBe(true);
     expect(result.output).toContain("verified");
   });
+
+  test("terminates timed-out commands and reports the timeout", async () => {
+    const root = await createRepo();
+    const result = await runTestCommand(root, 'node -e "setTimeout(() => {}, 60000)"', 50);
+
+    expect(result.passed).toBe(false);
+    expect(result.output).toContain("timed out after 50ms");
+  });
 });
