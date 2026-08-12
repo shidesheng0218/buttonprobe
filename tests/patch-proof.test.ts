@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { runPatchVerification } from "../src/patch-proof.js";
+import { loadPatchInput, runPatchVerification, validateProofArtifacts } from "../src/patch-proof.js";
 
 const servers: Server[] = [];
 
@@ -86,6 +86,7 @@ describe("patch proof verification", () => {
     expect(await readFile(join(root, "src", "App.tsx"), "utf8")).toBe(original);
     await stat(join(outputDir, "proof.json"));
     await expect(readFile(join(outputDir, "verified.diff"), "utf8")).resolves.toContain("enabled = true");
+    await expect(validateProofArtifacts(join(outputDir, "proof.json"), outputDir)).resolves.toBeUndefined();
   });
 
   test("rejects an external patch that breaks a same-page working control", async () => {
@@ -114,5 +115,27 @@ describe("patch proof verification", () => {
     expect(result.status).toBe("rejected");
     expect(result.ui?.regressions).toContain("normal");
     expect(result.reason).toContain("regressions");
+  });
+
+  test("loads a GitHub-style remote diff without using the model", async () => {
+    const patchText = "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1 +1 @@\n-old\n+new\n";
+    const patchServer = await listen(createServer((_request, response) => {
+      response.setHeader("content-type", "text/plain");
+      response.end(patchText);
+    }));
+
+    const patch = await loadPatchInput({ patchUrl: `${patchServer}/pull/1.diff` });
+
+    expect(patch.source).toContain("/pull/1.diff");
+    expect(patch.content).toBe(patchText);
+  });
+
+  test("rejects non-unified remote patch content", async () => {
+    const patchServer = await listen(createServer((_request, response) => {
+      response.setHeader("content-type", "text/plain");
+      response.end("not a diff");
+    }));
+
+    await expect(loadPatchInput({ patchUrl: `${patchServer}/pull/1.diff` })).rejects.toThrow("unified diff");
   });
 });

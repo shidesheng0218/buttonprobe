@@ -235,6 +235,13 @@ export interface ModelDataManifest {
   redactionApplied: boolean;
 }
 
+export interface ProofArtifacts {
+  verifiedDiff?: string;
+  proof?: string;
+  testLog?: string;
+  screenshots?: string[];
+}
+
 export interface ScanControl {
   id: string;
   pageUrl: string;

@@ -60,6 +60,8 @@ describe("viral eval", () => {
     expect(readme).toContain("9 UI-verified repairs");
     expect(readme).toContain("Last verified: August 5, 2026");
     expect(readme).toContain("npx buttonprobe eval viral");
+    expect(readme).toContain("--patch-url \"https://github.com/owner/repo/pull/123.diff\"");
+    expect(readme).toContain("examples/buttonprobe-verify-pr.yml");
 
     const gif = await readFile("docs/buttonprobe-demo.gif");
     expect(gif.subarray(0, 6).toString("ascii")).toMatch(/^GIF8[79]a$/);
@@ -73,6 +75,8 @@ describe("viral eval", () => {
     await stat("docs/launch/reddit-post.md");
     await stat("docs/launch/demo-script.md");
     await stat("scripts/record-demo.mjs");
+    await stat("examples/buttonprobe-verify-pr.yml");
+    expect(await readFile("examples/buttonprobe-verify-pr.yml", "utf8")).toContain("github.event.pull_request.diff_url");
   });
 
   test("runs the React repair suite as a real E2E benchmark", async () => {

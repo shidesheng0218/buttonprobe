@@ -1,5 +1,5 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { applyPatch, inspectGitWorkspace } from "./git-workspace.js";
 import { verifyScenarioContract } from "./behavior-contract.js";
 import { interactionChangesAfterClick } from "./regression-test.js";
@@ -19,7 +19,8 @@ import type {
 
 export interface PatchVerificationOptions {
   baseUrl: string;
-  patchPath: string;
+  patchPath?: string;
+  patchUrl?: string;
   projectRoot: string;
   outputDir: string;
   testCommand: string;
@@ -43,6 +44,11 @@ export interface PatchProofResult {
   originalCheckoutModified: boolean;
   usageSummary: AIUsageSummary;
   ui?: UIVerification;
+}
+
+export interface PatchInput {
+  source: string;
+  content: string;
 }
 
 function profileScanOptions(profile: BusinessProfile | undefined): {
@@ -95,6 +101,62 @@ function proofUsage(): AIUsageSummary {
   };
 }
 
+function looksLikeUnifiedDiff(value: string): boolean {
+  return /^diff --git /m.test(value) || /^---\s+(?:a\/|\S)/m.test(value) && /^\+\+\+\s+(?:b\/|\S)/m.test(value);
+}
+
+export async function loadPatchInput(options: { patchPath?: string; patchUrl?: string }): Promise<PatchInput> {
+  if (options.patchPath && options.patchUrl) {
+    throw new Error("Use either --patch or --patch-url, not both");
+  }
+  if (!options.patchPath && !options.patchUrl) {
+    throw new Error("buttonprobe verify requires --patch or --patch-url");
+  }
+  if (options.patchUrl) {
+    const url = new URL(options.patchUrl);
+    if (url.protocol !== "https:" && !["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)) {
+      throw new Error("--patch-url must use https or localhost");
+    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to download patch URL: HTTP ${response.status}`);
+    const content = await response.text();
+    if (!looksLikeUnifiedDiff(content)) throw new Error("Patch URL did not return a unified diff");
+    return { source: url.href, content };
+  }
+  const source = resolve(options.patchPath!);
+  const content = await readFile(source, "utf8");
+  if (!looksLikeUnifiedDiff(content)) throw new Error("Patch file must contain a unified diff");
+  return { source, content };
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(() => true).catch(() => false);
+}
+
+function resolveArtifactPath(root: string, path: string): string {
+  return isAbsolute(path) ? path : resolve(root, path);
+}
+
+export async function validateProofArtifacts(proofPath: string, artifactRoot = dirname(proofPath)): Promise<void> {
+  const proof = JSON.parse(await readFile(proofPath, "utf8")) as {
+    reportPath?: string;
+    verifiedDiffPath?: string;
+    ui?: UIVerification;
+  };
+  const required = [proofPath, proof.reportPath, proof.verifiedDiffPath].filter(Boolean) as string[];
+  for (const browser of proof.ui?.browsers ?? []) {
+    if (browser.screenshot) required.push(join("ui-verification", browser.screenshot));
+  }
+  if (proof.ui?.evidence?.beforeScreenshot) required.push(join("ui-verification", proof.ui.evidence.beforeScreenshot));
+  if (proof.ui?.evidence?.afterScreenshot) required.push(join("ui-verification", proof.ui.evidence.afterScreenshot));
+  for (const artifact of required) {
+    const candidate = resolveArtifactPath(artifactRoot, artifact);
+    if (!(await exists(candidate))) {
+      throw new Error(`Missing proof artifact: ${artifact}`);
+    }
+  }
+}
+
 export async function runPatchVerification(options: PatchVerificationOptions): Promise<PatchProofResult> {
   const outputDir = resolve(options.outputDir);
   const projectRoot = resolve(options.projectRoot);
@@ -105,7 +167,11 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
   if (!workspaceBefore.isRepository) throw new Error("buttonprobe verify requires a Git repository");
   if (options.apply && !workspaceBefore.clean) throw new Error("--apply requires a clean Git worktree");
 
-  const patch = await readFile(resolve(options.patchPath), "utf8");
+  const patchInput = await loadPatchInput({
+    ...(options.patchPath ? { patchPath: options.patchPath } : {}),
+    ...(options.patchUrl ? { patchUrl: options.patchUrl } : {})
+  });
+  const patch = patchInput.content;
   const baseline = await scanApplication({
     baseUrl: options.baseUrl,
     outputDir: join(outputDir, "baseline"),
@@ -245,7 +311,15 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
       redactionApplied: true
     },
     originalCheckoutModified,
-    ...(ui?.browsers ? { browsers: ui.browsers } : {})
+    ...(ui?.browsers ? { browsers: ui.browsers } : {}),
+    artifacts: {
+      ...(verifiedDiffPath ? { verifiedDiff: verifiedDiffPath } : {}),
+      proof: join(outputDir, "proof.json"),
+      screenshots: baselineControls.flatMap((control) => [
+        join(outputDir, "baseline", control.evidence.beforeScreenshot),
+        join(outputDir, "baseline", control.evidence.afterScreenshot)
+      ])
+    }
   });
   const proofPath = join(outputDir, "proof.json");
   const proof = {
@@ -253,7 +327,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     status,
     reason,
     baseUrl: options.baseUrl,
-    patchPath: resolve(options.patchPath),
+    patchSource: patchInput.source,
     verifiedDiffPath,
     testCommand: options.testCommand,
     devCommand: options.devCommand,
@@ -264,6 +338,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     reportPath
   };
   await writeFile(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+  await validateProofArtifacts(proofPath, outputDir);
   return {
     status,
     proofPath,

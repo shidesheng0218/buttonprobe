@@ -156,7 +156,13 @@ test("writes a self-contained report with verdicts and repair history", async ()
       screenshotCount: 2,
       redactionApplied: true
     },
-    originalCheckoutModified: false
+    originalCheckoutModified: false,
+    artifacts: {
+      verifiedDiff: ".buttonprobe/verify/verified.diff",
+      proof: ".buttonprobe/verify/proof.json",
+      testLog: ".buttonprobe/verify/test.log",
+      screenshots: [".buttonprobe/verify/baseline/screenshots/save-before.png"]
+    }
   });
   const html = await readFile(path, "utf8");
 
@@ -176,6 +182,10 @@ test("writes a self-contained report with verdicts and repair history", async ()
   expect(html).toContain("Input tokens");
   expect(html).toContain("Cache hits");
   expect(html).toContain("127.0.0.1:11434");
+  expect(html).toContain("Proof artifacts");
+  expect(html).toContain("verified diff: .buttonprobe/verify/verified.diff");
+  expect(html).toContain("proof: .buttonprobe/verify/proof.json");
+  expect(html).toContain("test log: .buttonprobe/verify/test.log");
   expect(html).toContain("$0.0000");
   expect(html).toContain("Evidence: test-verified");
   expect(html).toContain("Counterfactual:</strong> baseline click unchanged; patched click changed");

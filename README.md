@@ -94,6 +94,16 @@ npx buttonprobe verify http://localhost:5173 \
   --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
 ```
 
+Verify a GitHub pull request diff without asking any model:
+
+```bash
+npx buttonprobe verify http://localhost:5173 \
+  --patch-url "https://github.com/owner/repo/pull/123.diff" \
+  --target "[data-testid='save-profile']" \
+  --test-command "npm test" \
+  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
+```
+
 Status levels:
 
 | Status | Meaning |
@@ -107,6 +117,8 @@ Status levels:
 `--apply` only applies a diff after it reaches `ui-verified`.
 
 When more than one browser is requested, every requested browser must pass the target interaction, scenario checks, and same-page regression guard. A missing browser binary or a failed browser run leaves the patch at `test-verified`; it never upgrades the result by report metadata alone.
+
+GitHub Actions starter workflow: [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml). It verifies `github.event.pull_request.diff_url`, uploads `proof.json`, `report.html`, screenshots, logs, and `verified.diff`, and keeps model calls at `0`.
 
 ## External Eval
 
@@ -230,6 +242,7 @@ npx buttonprobe scan http://localhost:5173
 npx buttonprobe analyze http://localhost:5173
 npx buttonprobe fix http://localhost:5173 --test-command "npm test"
 npx buttonprobe verify http://localhost:5173 --patch agent.diff --test-command "npm test" --dev-command "npm run dev -- --port {port}"
+npx buttonprobe verify http://localhost:5173 --patch-url "https://github.com/owner/repo/pull/123.diff" --target "[data-testid='save']" --test-command "npm test" --dev-command "npm run dev -- --port {port}"
 npx buttonprobe eval viral
 npx buttonprobe eval react
 npx buttonprobe doctor http://localhost:5173 --test-command "npm test"

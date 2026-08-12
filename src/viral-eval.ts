@@ -622,6 +622,26 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
   }
   const manifest = assertExternalManifest(JSON.parse(await readFile(options.manifestPath, "utf8")));
   const manifestRoot = dirname(resolve(options.manifestPath));
+  if (!manifest.cases.length && !options.caseName) {
+    const result: ExternalEvalResult = {
+      schemaVersion: 1,
+      fixture: "external",
+      generatedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
+      summary: {
+        total: 0,
+        passed: 0,
+        sourceTop1Accuracy: null,
+        uiVerifiedRate: null,
+        falseAcceptRate: 0,
+        originalRepoPollutionRate: 0,
+        rollbackResidue: 0
+      },
+      cases: []
+    };
+    await writeFile(join(outputDir, "eval-results.json"), `${JSON.stringify(result, null, 2)}\n`);
+    return result;
+  }
   const selectedCases = options.caseName
     ? manifest.cases.filter((item) => item.name === options.caseName)
     : manifest.cases;

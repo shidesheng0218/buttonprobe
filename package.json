@@ -44,6 +44,7 @@
     "docs/launch/release-v0.1.0-alpha.1.md",
     "docs/launch/x-thread.md",
     "scripts",
+    "examples",
     "fixtures/viral-demo-react",
     "fixtures/react-repair-suite",
     "fixtures/external-react",

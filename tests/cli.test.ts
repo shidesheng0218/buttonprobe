@@ -47,6 +47,16 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("init");
   });
 
+  test("verify help exposes PR proof options", async () => {
+    const result = await runCli(["verify", "--help"]);
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("--patch");
+    expect(result.output).toContain("--patch-url");
+    expect(result.output).toContain("--target");
+    expect(result.output).toContain("--browser");
+  });
+
   test("rejects fix mode without a model configuration", async () => {
     const result = await runCli(["http://localhost:3000", "--fix"]);
 

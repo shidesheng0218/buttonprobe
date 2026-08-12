@@ -4,6 +4,7 @@ import type {
   AIPageAssessment,
   AIUsageSummary,
   ModelDataManifest,
+  ProofArtifacts,
   RepairLoopResult,
   ScanResult,
   SourceCandidateEvidence,
@@ -18,6 +19,7 @@ export interface ReportData {
   aiError?: string;
   originalCheckoutModified?: boolean;
   browsers?: UIBrowserResult[];
+  artifacts?: ProofArtifacts;
 }
 
 function escapeHtml(value: string): string {
@@ -164,6 +166,12 @@ export async function writeReport(
   const browsers = data.browsers ?? data.repairs.flatMap((repair) =>
     repair.result.attempts.flatMap((attempt) => attempt.ui?.browsers ?? [])
   );
+  const artifactLines = [
+    data.artifacts?.verifiedDiff ? `verified diff: ${data.artifacts.verifiedDiff}` : "",
+    data.artifacts?.proof ? `proof: ${data.artifacts.proof}` : "",
+    data.artifacts?.testLog ? `test log: ${data.artifacts.testLog}` : "",
+    ...(data.artifacts?.screenshots?.map((screenshot) => `screenshot: ${screenshot}`) ?? [])
+  ].filter(Boolean);
 
   const html = `<!doctype html>
 <html lang="en">
@@ -220,6 +228,7 @@ export async function writeReport(
     <p>original checkout modified: ${originalCheckoutModified}</p>
     ${browsers.length ? `<p><strong>Browser matrix:</strong> ${browsers.map((browser) => `${escapeHtml(browser.browser)}: ${escapeHtml(browser.status)}`).join(" · ")}</p>` : ""}
     ${data.modelDataManifest ? `<p>Model data: ${escapeHtml(data.modelDataManifest.endpointHost)} · ${data.modelDataManifest.sourceFiles.length} source file(s) · ${data.modelDataManifest.screenshotCount} screenshot(s) · redaction ${data.modelDataManifest.redactionApplied ? "enabled" : "disabled"}</p>` : ""}
+    ${artifactLines.length ? `<p><strong>Proof artifacts:</strong> ${artifactLines.map(escapeHtml).join(" · ")}</p>` : ""}
     <p>baseline -&gt; locate -&gt; diagnose -&gt; validate -&gt; worktree test -&gt; counterfactual UI -&gt; verified.diff</p>
     <div class="commands">
       <div class="command"><span>Rerun scan</span><code>buttonprobe scan ${escapeHtml(scan.baseUrl)}</code></div>
