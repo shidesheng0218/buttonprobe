@@ -54,6 +54,7 @@ describe("viral eval", () => {
 
     expect(readme).toContain("Find dead buttons. Get verified patches. Keep your repo untouched.");
     expect(readme).toContain("![ButtonProbe verified repair demo](docs/buttonprobe-demo.gif)");
+    expect(readme).toContain("![ButtonProbe GitHub Action proof demo](docs/buttonprobe-action-proof.gif)");
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
     expect(readme).toContain("10 isolated Git fixtures");
@@ -66,6 +67,8 @@ describe("viral eval", () => {
 
     const gif = await readFile("docs/buttonprobe-demo.gif");
     expect(gif.subarray(0, 6).toString("ascii")).toMatch(/^GIF8[79]a$/);
+    const actionGif = await readFile("docs/buttonprobe-action-proof.gif");
+    expect(actionGif.subarray(0, 6).toString("ascii")).toMatch(/^GIF8[79]a$/);
     await stat("fixtures/viral-demo-react/src/App.tsx");
     await stat("fixtures/viral-demo-react/src/App.test.mjs");
     await stat("fixtures/viral-demo-react/mock-openai-compatible.mjs");

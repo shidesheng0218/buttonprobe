@@ -37,6 +37,7 @@
   "files": [
     "dist",
     "docs/buttonprobe-demo.gif",
+    "docs/buttonprobe-action-proof.gif",
     "docs/providers.md",
     "docs/launch/demo-script.md",
     "docs/launch/hn-post.md",
@@ -67,6 +68,7 @@
     "demo:build": "vite build --config demo/vite.config.ts",
     "demo:viral": "vite --config fixtures/viral-demo-react/vite.config.ts",
     "record:demo": "node scripts/record-demo.mjs",
+    "record:proof-demo": "node scripts/record-action-proof-demo.mjs",
     "eval:viral": "tsx src/cli.ts eval viral --output .buttonprobe/eval/viral",
     "eval:react": "tsx src/cli.ts eval react --output .buttonprobe/eval/react",
     "eval:external": "tsx src/cli.ts eval external --manifest fixtures/external-react/manifest.json --allow-network --output .buttonprobe/eval/external"

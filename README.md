@@ -94,6 +94,8 @@ The React suite runs 10 isolated Git fixtures. Nine repairs reach `ui-verified`,
 
 Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contributor has proposed a UI diff. The Action runs `verify` only: it never calls a model and never applies a patch to the runner checkout.
 
+![ButtonProbe GitHub Action proof demo](docs/buttonprobe-action-proof.gif)
+
 ```yaml
 - uses: shidesheng0218/buttonprobe@v0
   with:
