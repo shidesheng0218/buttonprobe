@@ -40,6 +40,28 @@ It is not trying to be a general AI coding agent. The sharp use case is simpler 
 - Did it break another working button on the page?
 - Can I inspect the exact diff before my checkout is touched?
 
+## Architecture
+
+```mermaid
+flowchart LR
+  A[Local React App] --> B[ButtonProbe CLI]
+  B --> C[Browser Scanner]
+  C --> D[Source Locator]
+  D --> E{Diff source}
+  E -->|fix| F[Your Model\nGPT Claude DeepSeek Ollama]
+  E -->|verify| G[External AI or Human Diff]
+  F --> H[Unified Diff]
+  G --> H
+  H --> I[Isolated Git Worktree]
+  I --> J[Tests]
+  I --> K[Browser UI Verification]
+  J --> L[Proof Decision]
+  K --> L
+  L --> M[proof.json]
+  L --> N[verified.diff]
+  L --> O[HTML Report]
+```
+
 ## Why People Star It
 
 - **Works with your AI stack:** GPT, Claude, DeepSeek, OpenRouter-compatible endpoints, or local Ollama.

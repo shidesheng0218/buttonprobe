@@ -55,6 +55,9 @@ describe("viral eval", () => {
     expect(readme).toContain("Find dead buttons. Get verified patches. Keep your repo untouched.");
     expect(readme).toContain("![ButtonProbe verified repair demo](docs/buttonprobe-demo.gif)");
     expect(readme).toContain("![ButtonProbe GitHub Action proof demo](docs/buttonprobe-action-proof.gif)");
+    expect(readme).toContain("## Architecture");
+    expect(readme).toContain("flowchart LR");
+    expect(readme).toContain("Isolated Git Worktree");
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
     expect(readme).toContain("10 isolated Git fixtures");
