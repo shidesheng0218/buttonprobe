@@ -1,11 +1,12 @@
 import { access, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyPatch, inspectGitWorkspace } from "./git-workspace.js";
 import { verifyScenarioContract } from "./behavior-contract.js";
 import { interactionChangesAfterClick } from "./regression-test.js";
 import { writeReport } from "./report.js";
 import { scanApplication } from "./scanner.js";
 import { createWorktreeRepairSession } from "./worktree-repair.js";
+import { createRepairProofV2, proofArtifactPaths } from "./proof-schema.js";
 import type {
   AIUsageSummary,
   BusinessProfile,
@@ -139,10 +140,20 @@ function resolveArtifactPath(root: string, path: string): string {
 
 export async function validateProofArtifacts(proofPath: string, artifactRoot = dirname(proofPath)): Promise<void> {
   const proof = JSON.parse(await readFile(proofPath, "utf8")) as {
+    schemaVersion?: number;
     reportPath?: string;
     verifiedDiffPath?: string;
     ui?: UIVerification;
+    artifacts?: import("./types.js").RepairProofV2["artifacts"];
   };
+  if (proof.schemaVersion === 2 && proof.artifacts) {
+    for (const artifact of proofArtifactPaths({ artifacts: proof.artifacts })) {
+      if (isAbsolute(artifact) || !(await exists(resolveArtifactPath(artifactRoot, artifact)))) {
+        throw new Error(`Missing proof artifact: ${artifact}`);
+      }
+    }
+    return;
+  }
   const required = [proofPath, proof.reportPath, proof.verifiedDiffPath].filter(Boolean) as string[];
   for (const browser of proof.ui?.browsers ?? []) {
     if (browser.screenshot) required.push(join("ui-verification", browser.screenshot));
@@ -155,6 +166,24 @@ export async function validateProofArtifacts(proofPath: string, artifactRoot = d
       throw new Error(`Missing proof artifact: ${artifact}`);
     }
   }
+}
+
+function proofBaseline(control: ScanControl): "inert" | "crashed" | "ambiguous" {
+  return control.verdict === "CRASHED" ? "crashed" : control.verdict === "AMBIGUOUS" ? "ambiguous" : "inert";
+}
+
+function proofScreenshotPaths(baselineControls: ScanControl[], ui: UIVerification | undefined): string[] {
+  const screenshots = baselineControls.flatMap((control) => [
+    join("baseline", control.evidence.beforeScreenshot),
+    join("baseline", control.evidence.afterScreenshot)
+  ]);
+  if (ui?.evidence) {
+    screenshots.push(
+      join("ui-verification", ui.evidence.beforeScreenshot),
+      join("ui-verification", ui.evidence.afterScreenshot)
+    );
+  }
+  return [...new Set(screenshots)];
 }
 
 export async function runPatchVerification(options: PatchVerificationOptions): Promise<PatchProofResult> {
@@ -300,6 +329,9 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
   const originalCheckoutModified = options.apply
     ? !workspaceAfter.clean
     : workspaceAfter.status !== workspaceBefore.status;
+  const testLogPath = join(outputDir, "test.log");
+  const testLog = attempts.at(-1)?.tests?.output ?? reason;
+  await writeFile(testLogPath, `${testLog}\n`);
   const reportPath = await writeReport(outputDir, baseline, {
     assessments: [],
     repairs: target ? [{ controlId: target.id, result: repairResult }] : [],
@@ -311,32 +343,48 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
       redactionApplied: true
     },
     originalCheckoutModified,
+    proofStatus: status as import("./types.js").RepairProofStatus,
+    ...(status === "rejected" ? { rejectionReason: reason } : {}),
     ...(ui?.browsers ? { browsers: ui.browsers } : {}),
     artifacts: {
-      ...(verifiedDiffPath ? { verifiedDiff: verifiedDiffPath } : {}),
-      proof: join(outputDir, "proof.json"),
-      screenshots: baselineControls.flatMap((control) => [
-        join(outputDir, "baseline", control.evidence.beforeScreenshot),
-        join(outputDir, "baseline", control.evidence.afterScreenshot)
-      ])
+      ...(verifiedDiffPath ? { verifiedDiff: relative(outputDir, verifiedDiffPath) } : {}),
+      proof: "proof.json",
+      testLog: "test.log",
+      screenshots: proofScreenshotPaths(baselineControls, ui)
     }
   });
   const proofPath = join(outputDir, "proof.json");
-  const proof = {
-    schemaVersion: 1,
+  const proof = createRepairProofV2({
     status,
-    reason,
-    baseUrl: options.baseUrl,
-    patchSource: patchInput.source,
-    verifiedDiffPath,
-    testCommand: options.testCommand,
-    devCommand: options.devCommand,
-    browsers: options.browsers ?? ["chromium"],
+    patch: { source: patchInput.source, content: patch },
+    ...(target
+      ? {
+          target: {
+            id: target.id,
+            selector: target.selector,
+            baseline: proofBaseline(target),
+            patchedWorks: status === "ui-verified" && Boolean(ui?.targetWorks)
+          }
+        }
+      : {}),
+    tests: {
+      passed: attempts.at(-1)?.tests?.passed ?? false,
+      command: attempts.at(-1)?.tests?.command ?? options.testCommand,
+      log: "test.log"
+    },
+    browsers: ui?.browsers ?? [],
+    ...(ui?.behaviorContract ? { scenario: ui.behaviorContract } : {}),
+    regressions: ui?.regressions ?? [],
     originalCheckoutModified,
-    usageSummary,
-    ui,
-    reportPath
-  };
+    modelCalls: usageSummary.modelCalls,
+    artifacts: {
+      report: relative(outputDir, reportPath),
+      ...(verifiedDiffPath ? { verifiedDiff: relative(outputDir, verifiedDiffPath) } : {}),
+      screenshots: proofScreenshotPaths(baselineControls, ui),
+      testLog: "test.log"
+    },
+    ...(status === "rejected" ? { rejectionReason: reason } : {})
+  });
   await writeFile(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
   await validateProofArtifacts(proofPath, outputDir);
   return {

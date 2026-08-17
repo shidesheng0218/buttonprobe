@@ -157,6 +157,8 @@ test("writes a self-contained report with verdicts and repair history", async ()
       redactionApplied: true
     },
     originalCheckoutModified: false,
+    proofStatus: "test-verified",
+    rejectionReason: "Firefox browser executable missing",
     artifacts: {
       verifiedDiff: ".buttonprobe/verify/verified.diff",
       proof: ".buttonprobe/verify/proof.json",
@@ -172,6 +174,8 @@ test("writes a self-contained report with verdicts and repair history", async ()
   expect(html).toContain("Verified diffs");
   expect(html).toContain("Model calls");
   expect(html).toContain("original checkout modified: false");
+  expect(html).toContain("Proof status<strong>test-verified</strong>");
+  expect(html).toContain("Rejection reason: Firefox browser executable missing");
   expect(html).toContain("Browser matrix");
   expect(html).toContain("chromium: passed");
   expect(html).toContain("firefox: unavailable");

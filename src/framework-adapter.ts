@@ -24,6 +24,17 @@ export interface InstrumentSourceResult {
   entries: SourceManifestEntry[];
 }
 
+export interface FrameworkEventBinding {
+  kind: "react-click" | "vue-click" | "svelte-click" | "unknown";
+  expression?: string;
+}
+
+export interface FrameworkSourceAdapter {
+  framework: Exclude<SupportedFramework, "angular" | "unknown">;
+  instrument(source: string, filePath: string, projectRoot: string): InstrumentSourceResult;
+  eventBinding(attributes: string): FrameworkEventBinding;
+}
+
 export interface ButtonProbeVitePluginOptions {
   root?: string;
   manifestPath?: string;
@@ -48,6 +59,37 @@ function frameworkForPath(path: string): SupportedFramework {
   if (/(?:^|\/)app\//.test(path.replaceAll("\\", "/"))) return "next";
   if ([".tsx", ".jsx"].includes(extension)) return "react";
   return "unknown";
+}
+
+function bracedAttribute(attributes: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|\\s)${name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*=\\s*\\{([^}]+)\\}`).exec(attributes);
+  return match?.[1]?.trim();
+}
+
+function quotedAttribute(attributes: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|\\s)${name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*=\\s*["']([^"']+)["']`).exec(attributes);
+  return match?.[1]?.trim();
+}
+
+export function frameworkAdapterForPath(filePath: string): FrameworkSourceAdapter {
+  const framework = frameworkForPath(filePath);
+  const supported = framework === "vue" || framework === "svelte" || framework === "next" ? framework : "react";
+  return {
+    framework: supported,
+    instrument: instrumentSource,
+    eventBinding(attributes) {
+      if (supported === "vue") {
+        const expression = quotedAttribute(attributes, "@click") ?? quotedAttribute(attributes, "v-on:click");
+        return expression ? { kind: "vue-click", expression } : { kind: "unknown" };
+      }
+      if (supported === "svelte") {
+        const expression = bracedAttribute(attributes, "on:click") ?? bracedAttribute(attributes, "onclick");
+        return expression ? { kind: "svelte-click", expression } : { kind: "unknown" };
+      }
+      const expression = bracedAttribute(attributes, "onClick");
+      return expression ? { kind: "react-click", expression } : { kind: "unknown" };
+    }
+  };
 }
 
 function findTagEnd(source: string, start: number): number | undefined {

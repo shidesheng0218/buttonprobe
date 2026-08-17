@@ -36,7 +36,7 @@ async function createFixture() {
     [
       "export function App() {",
       "  const enabled = false;",
-      '  return <button data-testid="increment">Increment</button>;',
+      '  return <button data-testid="increment" onClick={() => {}}>Increment</button>;',
       "}",
       ""
     ].join("\n")
@@ -122,7 +122,7 @@ describe("proof-carrying workflow", () => {
     const outputDir = join(fixture.root, ".buttonprobe");
     const modelUrl = `${await listen(
       modelServer(
-        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n"
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n"
       )
     )}/v1`;
 
@@ -154,7 +154,7 @@ describe("proof-carrying workflow", () => {
     const fixture = await createFixture();
     const modelUrl = `${await listen(
       modelServer(
-        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n"
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n"
       )
     )}/v1`;
 
@@ -191,8 +191,8 @@ describe("proof-carrying workflow", () => {
         for await (const chunk of request) body += chunk;
         const isAnalysis = body.includes("Analyze every supplied UI control");
         const patch = repairCalls === 0
-          ? "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,5 @@\n export function App() {\n   const enabled = false;\n+  const firstAttempt = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n"
-          : "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n";
+          ? "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,5 @@\n export function App() {\n   const enabled = false;\n+  const firstAttempt = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n"
+          : "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n";
         if (!isAnalysis) repairCalls += 1;
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify({ choices: [{ message: { content: isAnalysis
@@ -283,7 +283,7 @@ describe("proof-carrying workflow", () => {
     const fixture = await createFixture();
     const modelUrl = `${await listen(
       modelServer(
-        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n"
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n"
       )
     )}/v1`;
 
@@ -318,7 +318,7 @@ describe("proof-carrying workflow", () => {
     const original = await readFile(fixture.sourcePath, "utf8");
     const modelUrl = `${await listen(
       modelServer(
-        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\">Increment</button>;\n }\n"
+        "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,4 +1,4 @@\n export function App() {\n-  const enabled = false;\n+  const enabled = true;\n   return <button data-testid=\"increment\" onClick={() => {}}>Increment</button>;\n }\n"
       )
     )}/v1`;
 

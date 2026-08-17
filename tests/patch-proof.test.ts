@@ -86,6 +86,17 @@ describe("patch proof verification", () => {
     expect(await readFile(join(root, "src", "App.tsx"), "utf8")).toBe(original);
     await stat(join(outputDir, "proof.json"));
     await expect(readFile(join(outputDir, "verified.diff"), "utf8")).resolves.toContain("enabled = true");
+    const proof = JSON.parse(await readFile(join(outputDir, "proof.json"), "utf8"));
+    expect(proof.schemaVersion).toBe(2);
+    expect(proof.status).toBe("ui-verified");
+    expect(proof.patch.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(proof.artifacts).toMatchObject({
+      report: "report.html",
+      verifiedDiff: "verified.diff",
+      testLog: "test.log"
+    });
+    expect(proof.originalCheckoutModified).toBe(false);
+    expect(proof.modelCalls).toBe(0);
     await expect(validateProofArtifacts(join(outputDir, "proof.json"), outputDir)).resolves.toBeUndefined();
   });
 

@@ -1,0 +1,51 @@
+name: ButtonProbe UI Proof
+description: Verify a UI repair diff in an isolated worktree before it is merged.
+inputs:
+  url:
+    required: true
+    description: Local development URL already running in the workflow.
+  patch:
+    required: false
+    description: Local unified diff path.
+  patch-url:
+    required: false
+    description: Remote unified diff URL, such as github.event.pull_request.diff_url.
+  test-command:
+    required: true
+    description: Test command for the patched worktree.
+  dev-command:
+    required: false
+    description: Patched worktree dev command; use {port} for the allocated port.
+  project-root:
+    required: false
+    default: .
+  output:
+    required: false
+    default: buttonprobe-proof
+  target:
+    required: false
+  browser:
+    required: false
+    default: chromium
+  buttonprobe-version:
+    required: false
+    default: latest
+  fail-on-unverified:
+    required: false
+    default: "true"
+outputs:
+  status:
+    description: patch-applies, test-verified, ui-verified, or rejected.
+  proof-path:
+    description: Path to proof.json.
+  report-path:
+    description: Path to report.html.
+  verified-diff-path:
+    description: Path to verified.diff when available.
+  model-calls:
+    description: Model calls used by verification; expected to be 0.
+  original-checkout-modified:
+    description: Whether the source checkout changed.
+runs:
+  using: node20
+  main: scripts/action.mjs

@@ -216,3 +216,60 @@ test("uses a compiler instrumentation manifest as the highest-confidence source 
   expect(candidate?.reason).toContain("compiler instrumentation");
   expect(isTrustedSourceCandidate(candidate)).toBe(true);
 });
+
+test("traces a Vue click handler through a ref state update", async () => {
+  const root = await mkdtemp(join(tmpdir(), "buttonprobe-vue-source-"));
+  await mkdir(join(root, "src"));
+  await writeFile(
+    join(root, "src", "ProfileForm.vue"),
+    [
+      '<script setup lang="ts">',
+      'import { ref } from "vue";',
+      'const saved = ref(false);',
+      'const saveProfile = () => { saved.value = true; };',
+      '</script>',
+      '<template><button data-testid="save-profile" @click="saveProfile">Save profile</button></template>'
+    ].join("\n")
+  );
+
+  const [candidate] = await locateSourceCandidates(root, {
+    controlId: "save-profile",
+    pageUrl: "http://localhost:5173/profile",
+    label: "Save profile",
+    verdict: "INERT",
+    evidence: { beforeScreenshot: "before.png", afterScreenshot: "after.png", signals: [] }
+  });
+
+  expect(candidate?.path).toBe("src/ProfileForm.vue");
+  expect(candidate?.reason).toContain("Vue event chain");
+  expect(candidate?.eventChain).toMatchObject({ handler: "saveProfile", calls: ["saved"] });
+  expect(isTrustedSourceCandidate(candidate)).toBe(true);
+});
+
+test("traces a Svelte click handler through a reactive assignment", async () => {
+  const root = await mkdtemp(join(tmpdir(), "buttonprobe-svelte-source-"));
+  await mkdir(join(root, "src"));
+  await writeFile(
+    join(root, "src", "ProfileForm.svelte"),
+    [
+      '<script>',
+      'let saved = false;',
+      'function saveProfile() { saved = true; }',
+      '</script>',
+      '<button data-testid="save-profile" on:click={saveProfile}>Save profile</button>'
+    ].join("\n")
+  );
+
+  const [candidate] = await locateSourceCandidates(root, {
+    controlId: "save-profile",
+    pageUrl: "http://localhost:5173/profile",
+    label: "Save profile",
+    verdict: "INERT",
+    evidence: { beforeScreenshot: "before.png", afterScreenshot: "after.png", signals: [] }
+  });
+
+  expect(candidate?.path).toBe("src/ProfileForm.svelte");
+  expect(candidate?.reason).toContain("Svelte event chain");
+  expect(candidate?.eventChain).toMatchObject({ handler: "saveProfile", calls: ["saved"] });
+  expect(isTrustedSourceCandidate(candidate)).toBe(true);
+});

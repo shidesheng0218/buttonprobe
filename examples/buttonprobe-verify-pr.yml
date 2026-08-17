@@ -18,12 +18,14 @@ jobs:
       - run: npm run dev -- --host 127.0.0.1 --port 5173 &
       - run: npx wait-on http://127.0.0.1:5173
       - name: Verify PR diff with browser proof
-        run: |
-          npx buttonprobe verify http://127.0.0.1:5173 \
-            --patch-url "${{ github.event.pull_request.diff_url }}" \
-            --test-command "npm test" \
-            --dev-command "npm run dev -- --host 127.0.0.1 --port {port}" \
-            --output buttonprobe-proof
+        uses: shidesheng0218/buttonprobe@v0
+        with:
+          url: http://127.0.0.1:5173
+          patch-url: ${{ github.event.pull_request.diff_url }}
+          test-command: npm test
+          dev-command: npm run dev -- --host 127.0.0.1 --port {port}
+          browser: chromium
+          buttonprobe-version: 0.1.0-alpha.1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -20,9 +20,16 @@ npx buttonprobe verify http://localhost:5173 \
   --browser chromium,firefox,webkit
 ```
 
-**5/5 viral cases passing. 10 independent React cases, 9 UI-verified repairs, Original repo pollution rate: 0.**
+<!-- benchmark:start -->
+**5/5 viral cases passing. 9/10 React cases UI-verified. Original repo pollution rate: 0.**
 
-Last verified: August 5, 2026.
+| Suite | Result | Source Top-1 | Residue | Evidence date |
+| --- | --- | --- | --- | --- |
+| Viral | 5/5 passing | 1 | 0 | 2026-08-17 |
+| React | 9/10 UI-verified | 1 | 0 | 2026-08-17 |
+
+Generated from real local eval artifacts in `benchmarks/latest.json`.
+<!-- benchmark:end -->
 
 ButtonProbe is a local-first proof layer for UI repair diffs. It clicks controls in your local app, finds inert or crashing buttons, optionally asks your own model for a unified diff, then proves the diff in an isolated Git worktree with tests, browser evidence, screenshots, and a report.
 
@@ -83,6 +90,21 @@ npx buttonprobe eval react
 
 The React suite runs 10 isolated Git fixtures. Nine repairs reach `ui-verified`, one intentionally fails UI verification, and one working control is preserved. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
 
+## GitHub Action
+
+Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contributor has proposed a UI diff. The Action runs `verify` only: it never calls a model and never applies a patch to the runner checkout.
+
+```yaml
+- uses: shidesheng0218/buttonprobe@v0
+  with:
+    url: http://127.0.0.1:5173
+    patch-url: ${{ github.event.pull_request.diff_url }}
+    test-command: npm test
+    dev-command: npm run dev -- --host 127.0.0.1 --port {port}
+```
+
+It exposes `status`, `proof-path`, `report-path`, `verified-diff-path`, `model-calls`, and `original-checkout-modified`. Upload the proof directory with `actions/upload-artifact`; a complete workflow is in [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml).
+
 ## Verify Any Patch
 
 This is the moat: ButtonProbe can verify a patch from any AI or human without asking a model for anything.
@@ -118,11 +140,9 @@ Status levels:
 
 When more than one browser is requested, every requested browser must pass the target interaction, scenario checks, and same-page regression guard. A missing browser binary or a failed browser run leaves the patch at `test-verified`; it never upgrades the result by report metadata alone.
 
-GitHub Actions starter workflow: [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml). It verifies `github.event.pull_request.diff_url`, uploads `proof.json`, `report.html`, screenshots, logs, and `verified.diff`, and keeps model calls at `0`.
-
 ## External Eval
 
-External benchmarks are opt-in because they clone public repositories and run only the manifest commands you provide. Every case must pin a Git commit and provide a local `patchFile`, `testCommand`, and `devCommand`.
+External benchmarks are opt-in because they clone public repositories and run only the manifest commands you provide. Every case must pin a Git commit, declare its framework, license, expected source file, and provide a local `patchFile`, `testCommand`, and `devCommand`.
 
 ```bash
 buttonprobe eval external \
@@ -274,7 +294,7 @@ The report includes verdicts, AI assessments, source candidates, repair timeline
 Supported well today:
 
 - Localhost development apps
-- React JavaScript/TypeScript
+- React JavaScript/TypeScript automatic repair
 - Vite-first workflows
 - Dead buttons, inert controls, broken click handlers
 - BYOK model repair
@@ -287,7 +307,7 @@ Deferred:
 - Backend business logic
 - Database changes
 - Payment, deletion, permission, and destructive flows
-- Broad Vue/Svelte/Next.js repair claims without public eval evidence
+- Vue/Svelte/Next.js automatic repair until each framework has public UI-verified eval evidence
 
 ## Launch Story
 

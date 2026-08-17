@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { createButtonProbeVitePlugin, instrumentSource } from "../src/framework-adapter.js";
+import { createButtonProbeVitePlugin, frameworkAdapterForPath, instrumentSource } from "../src/framework-adapter.js";
 
 test("instruments React controls with stable local source identities", () => {
   const source = [
@@ -46,4 +46,15 @@ test("does not inject source metadata into Vite production builds", async () => 
   const result = await plugin.transform?.('<button data-testid="save">Save</button>', join(root, "src", "Save.tsx"));
 
   expect(result).toBeUndefined();
+});
+
+test("recognizes Vue and Svelte click bindings through framework adapters", () => {
+  expect(frameworkAdapterForPath("/repo/src/Save.vue").eventBinding('<button @click="save">Save</button>')).toMatchObject({
+    expression: "save",
+    kind: "vue-click"
+  });
+  expect(frameworkAdapterForPath("/repo/src/Save.svelte").eventBinding('<button on:click={save}>Save</button>')).toMatchObject({
+    expression: "save",
+    kind: "svelte-click"
+  });
 });

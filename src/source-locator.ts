@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
-import type { SourceManifest } from "./framework-adapter.js";
+import { frameworkAdapterForPath, type SourceManifest } from "./framework-adapter.js";
 import { redactSensitiveText } from "./privacy.js";
 import type { RepairIssue, SourceCandidate } from "./types.js";
 
@@ -104,7 +104,12 @@ function handlerBody(source: string, name: string): string | undefined {
   return bodyEnd === -1 ? undefined : source.slice(bodyStart, bodyEnd);
 }
 
-function handlerEvidence(expression: string, source: string, setters: Set<string>): { score: number; reasons: string[]; handler?: string; calls: string[] } {
+function handlerEvidence(
+  expression: string,
+  source: string,
+  setters: Set<string>,
+  stateVariables: Set<string> = new Set()
+): { score: number; reasons: string[]; handler?: string; calls: string[] } {
   const named = expression.match(/^[A-Za-z_$][\w$]*$/)?.[0];
   const body = named ? handlerBody(source, named) : expression;
   if (!body && !named) return { score: 0, reasons: [], calls: [] };
@@ -117,6 +122,13 @@ function handlerEvidence(expression: string, source: string, setters: Set<string
       score += 10;
       reasons.push(`handler calls ${setter}`);
       calls.push(setter);
+    }
+  }
+  for (const stateVariable of stateVariables) {
+    if (new RegExp(`\\b${escapeRegExp(stateVariable)}(?:\\.value)?\\s*=`).test(searchableBody)) {
+      score += 10;
+      reasons.push(`handler updates ${stateVariable}`);
+      calls.push(stateVariable);
     }
   }
   const routerCall = searchableBody.match(/\b(navigate|push|replace)\s*\(|\b(?:router|history)\.(push|replace)\s*\(/);
@@ -140,17 +152,26 @@ function handlerEvidence(expression: string, source: string, setters: Set<string
   return { score, reasons, ...(named ? { handler: named } : {}), calls: [...new Set(calls)] };
 }
 
-function jsxEventChainScore(content: string, path: string, issue: RepairIssue): {
+function frameworkEventChainScore(content: string, path: string, issue: RepairIssue): {
   score: number;
   reasons: string[];
   eventChain?: SourceCandidate["eventChain"];
 } {
-  if (![".js", ".jsx", ".ts", ".tsx"].includes(extname(path).toLowerCase())) return { score: 0, reasons: [] };
+  if (![".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"].includes(extname(path).toLowerCase())) {
+    return { score: 0, reasons: [] };
+  }
+  const adapter = frameworkAdapterForPath(path);
   const setters = new Set(
     [...content.matchAll(/(?:const|let)\s+\[[^\]]+,\s*(set[A-Z][\w$]*)\]\s*=\s*(?:React\.)?useState\s*\(/g)]
       .map((match) => match[1])
       .filter((setter): setter is string => Boolean(setter))
   );
+  const stateVariables = new Set([
+    ...content.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*ref\s*\(/g),
+    ...(adapter.framework === "svelte"
+      ? [...content.matchAll(/\blet\s+([A-Za-z_$][\w$]*)\s*=/g)]
+      : [])
+  ].map((match) => match[1]).filter((name): name is string => Boolean(name)));
   let score = 0;
   const reasons: string[] = [];
   let eventChain: SourceCandidate["eventChain"] | undefined;
@@ -169,8 +190,16 @@ function jsxEventChainScore(content: string, path: string, issue: RepairIssue): 
     const matched = jsxAttribute(attributes, "data-testid") === issue.controlId ||
       jsxAttribute(attributes, "aria-label") === issue.label.trim() || visibleText === issue.label.trim();
     if (!matched) continue;
+    const binding = adapter.eventBinding(attributes);
+    if (!binding.expression) continue;
     score += 12;
-    reasons.push("JSX event chain");
+    reasons.push(
+      binding.kind === "vue-click"
+        ? "Vue event chain"
+        : binding.kind === "svelte-click"
+          ? "Svelte event chain"
+          : "JSX event chain"
+    );
     const controlIdentity = jsxAttribute(attributes, "data-testid")
       ? `${tag}[data-testid="${jsxAttribute(attributes, "data-testid")}"]`
       : jsxAttribute(attributes, "aria-label")
@@ -184,17 +213,14 @@ function jsxEventChainScore(content: string, path: string, issue: RepairIssue): 
         .filter((importPath): importPath is string => Boolean(importPath)),
       parentCandidates: []
     };
-    const expression = clickExpression(attributes);
-    if (expression) {
-      const detail = handlerEvidence(expression, content, setters);
-      score += detail.score;
-      reasons.push(...detail.reasons);
-      eventChain = {
-        ...eventChain,
-        ...(detail.handler ? { handler: detail.handler } : {}),
-        calls: detail.calls
-      };
-    }
+    const detail = handlerEvidence(binding.expression, content, setters, stateVariables);
+    score += detail.score;
+    reasons.push(...detail.reasons);
+    eventChain = {
+      ...eventChain,
+      ...(detail.handler ? { handler: detail.handler } : {}),
+      calls: detail.calls
+    };
   }
   return { score, reasons: [...new Set(reasons)], ...(eventChain ? { eventChain } : {}) };
 }
@@ -232,9 +258,11 @@ function sourceScore(content: string, issue: RepairIssue, path: string): { score
     score += 2;
     reasons.push("route path");
   }
-  if (/<button[\s\S]{0,500}\bonClick\s*=|<[^>]+\bonClick\s*=/i.test(content)) {
+  if (/<button[\s\S]{0,500}(?:\bonClick\s*=|@click\s*=|v-on:click\s*=|on:click\s*=|\bonclick\s*=)|<[^>]+(?:\bonClick\s*=|@click\s*=|v-on:click\s*=|on:click\s*=|\bonclick\s*=)/i.test(content)) {
     score += 1;
-    reasons.push("nearby JSX event handler");
+    reasons.push([".vue", ".svelte"].includes(extname(path).toLowerCase())
+      ? "nearby framework event handler"
+      : "nearby JSX event handler");
   }
   const setters = [...content.matchAll(/const\s+\[[^\]]+,\s*(set[A-Z]\w*)\]\s*=\s*useState/g)].map((match) => match[1]);
   if (setters.some((setter) => setter && new RegExp(`\\b${escapeRegExp(setter)}\\s*\\(`).test(content))) {
@@ -255,7 +283,7 @@ function sourceScore(content: string, issue: RepairIssue, path: string): { score
     score += 1;
     reasons.push("imported component context");
   }
-  const eventChain = jsxEventChainScore(content, path, issue);
+  const eventChain = frameworkEventChainScore(content, path, issue);
   score += eventChain.score;
   reasons.push(...eventChain.reasons);
   if (strongIdentity) reasons.push("strong identity");

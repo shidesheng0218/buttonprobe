@@ -56,9 +56,10 @@ describe("viral eval", () => {
     expect(readme).toContain("![ButtonProbe verified repair demo](docs/buttonprobe-demo.gif)");
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
-    expect(readme).toContain("10 independent React cases");
-    expect(readme).toContain("9 UI-verified repairs");
-    expect(readme).toContain("Last verified: August 5, 2026");
+    expect(readme).toContain("10 isolated Git fixtures");
+    expect(readme).toContain("9/10 React cases UI-verified");
+    expect(readme).toContain("<!-- benchmark:start -->");
+    expect(readme).toContain("Generated from real local eval artifacts in `benchmarks/latest.json`.");
     expect(readme).toContain("npx buttonprobe eval viral");
     expect(readme).toContain("--patch-url \"https://github.com/owner/repo/pull/123.diff\"");
     expect(readme).toContain("examples/buttonprobe-verify-pr.yml");
@@ -76,7 +77,7 @@ describe("viral eval", () => {
     await stat("docs/launch/demo-script.md");
     await stat("scripts/record-demo.mjs");
     await stat("examples/buttonprobe-verify-pr.yml");
-    expect(await readFile("examples/buttonprobe-verify-pr.yml", "utf8")).toContain("github.event.pull_request.diff_url");
+    expect(await readFile("examples/buttonprobe-verify-pr.yml", "utf8")).toContain("uses: shidesheng0218/buttonprobe@v0");
   });
 
   test("runs the React repair suite as a real E2E benchmark", async () => {

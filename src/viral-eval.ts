@@ -7,8 +7,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./git-workspace.js";
 import { locateSourceCandidates } from "./source-locator.js";
-import { runPatchVerification } from "./patch-proof.js";
-import type { RepairEvidenceStatus, RepairIssue, SourceCandidate } from "./types.js";
+import { runPatchVerification, validateProofArtifacts } from "./patch-proof.js";
+import type { RepairEvidenceStatus, RepairIssue, ScanControl, SourceCandidate } from "./types.js";
+import { scanApplication } from "./scanner.js";
 import { runButtonProbe } from "./workflow.js";
 
 export type EvalFailureStage = "clone" | "setup" | "scan" | "locate" | "model" | "validate" | "test" | "ui" | "cleanup" | null;
@@ -80,8 +81,11 @@ export interface ExternalEvalOptions {
 
 export interface ExternalEvalCase {
   name: string;
+  framework: "react" | "vue" | "svelte" | "next";
   repo: string;
   commit: string;
+  license: string;
+  expectedSource: string;
   appDirectory?: string;
   patchFile?: string;
   baseUrl?: string;
@@ -93,7 +97,7 @@ export interface ExternalEvalCase {
 }
 
 export interface ExternalEvalResult {
-  schemaVersion: 1;
+  schemaVersion: 2;
   fixture: "external";
   generatedAt: string;
   durationMs: number;
@@ -108,8 +112,11 @@ export interface ExternalEvalResult {
   };
   cases: Array<{
     name: string;
+    framework: ExternalEvalCase["framework"];
     repo: string;
     commit: string;
+    license: string;
+    expectedSource: string;
     artifactDir: string;
     status: "passed" | "failed" | "skipped";
     failureStage: EvalFailureStage;
@@ -119,6 +126,8 @@ export interface ExternalEvalResult {
     residueFiles: string[];
     proofPath: string;
     reportPath: string;
+    sourceTop1: boolean | null;
+    sourceCandidate: string | null;
   }>;
 }
 
@@ -218,14 +227,32 @@ function stopProcess(child: ChildProcess): Promise<void> {
   });
 }
 
-async function cloneExternalRepository(repo: string, checkout: string, timeoutMs: number): Promise<void> {
+export function remainingBudget(deadline: number, now = Date.now()): number {
+  return Math.max(0, deadline - now);
+}
+
+export function externalCloneArguments(repo: string, checkout: string): string[] {
+  return ["clone", "--filter=blob:none", "--no-checkout", repo, checkout];
+}
+
+function requireBudget(deadline: number): number {
+  const timeoutMs = remainingBudget(deadline);
+  if (timeoutMs === 0) throw new Error("External eval case timed out");
+  return timeoutMs;
+}
+
+async function cloneExternalRepository(repo: string, checkout: string, deadline: number): Promise<void> {
   let lastError = "clone failed";
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const timeoutMs = requireBudget(deadline);
     if (attempt > 0) await rm(checkout, { recursive: true, force: true });
-    const clone = await runCommand("git", ["clone", "--no-checkout", repo, checkout], { cwd: dirname(checkout), timeoutMs });
+    const clone = await runCommand("git", externalCloneArguments(repo, checkout), { cwd: dirname(checkout), timeoutMs });
     if (clone.code === 0) return;
     lastError = `${clone.stderr || clone.stdout}`.trim() || lastError;
-    if (attempt < 2) await new Promise((resolveDelay) => setTimeout(resolveDelay, 500 * (attempt + 1)));
+    if (attempt < 2) {
+      const delay = Math.min(500 * (attempt + 1), requireBudget(deadline));
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
+    }
   }
   throw new Error(`Clone failed after 3 attempts: ${lastError}`);
 }
@@ -287,6 +314,20 @@ function candidateSummary(candidate: SourceCandidate | undefined): ViralBenchmar
 
 function relativeArtifact(outputDir: string, path: string): string {
   return relative(outputDir, path).replaceAll("\\", "/");
+}
+
+function sourceControl(controls: ScanControl[], target?: string): ScanControl | undefined {
+  if (!target) return controls.find((control) => control.verdict !== "WORKS");
+  return controls.find((control) => control.selector === target || control.id === target || control.testId === target);
+}
+
+function sourceExpectedPath(expectedSource: string, appDirectory: string | undefined): string {
+  const normalizedExpected = expectedSource.replaceAll("\\", "/");
+  const normalizedApp = (appDirectory ?? ".").replaceAll("\\", "/").replace(/^\.\//, "");
+  if (normalizedApp && normalizedApp !== "." && normalizedExpected.startsWith(`${normalizedApp}/`)) {
+    return normalizedExpected.slice(normalizedApp.length + 1);
+  }
+  return normalizedExpected;
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -579,7 +620,7 @@ export async function runReactEval(options: ViralEvalOptions): Promise<ViralEval
   return writeEvalResult(assembleResult(reactFixture, startedAt, runs), outputDir);
 }
 
-function assertExternalManifest(value: unknown): { cases: ExternalEvalCase[] } {
+export function parseExternalEvalManifest(value: unknown): { cases: ExternalEvalCase[] } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("External eval manifest must be an object");
   }
@@ -596,10 +637,22 @@ function assertExternalManifest(value: unknown): { cases: ExternalEvalCase[] } {
       if (typeof item.commit !== "string" || !item.commit) {
         throw new Error(`External eval case ${index} requires a pinned commit`);
       }
+      if (item.framework !== "react" && item.framework !== "vue" && item.framework !== "svelte" && item.framework !== "next") {
+        throw new Error(`External eval case ${index} requires framework: react, vue, svelte, or next`);
+      }
+      if (typeof item.license !== "string" || !item.license) {
+        throw new Error(`External eval case ${index} requires license`);
+      }
+      if (typeof item.expectedSource !== "string" || !item.expectedSource) {
+        throw new Error(`External eval case ${index} requires expectedSource`);
+      }
       return {
         name: item.name,
+        framework: item.framework,
         repo: item.repo,
         commit: item.commit,
+        license: item.license,
+        expectedSource: item.expectedSource,
         ...(typeof item.appDirectory === "string" ? { appDirectory: item.appDirectory } : {}),
         ...(typeof item.patchFile === "string" ? { patchFile: item.patchFile } : {}),
         ...(typeof item.baseUrl === "string" ? { baseUrl: item.baseUrl } : {}),
@@ -620,11 +673,11 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
   if (!options.allowNetwork) {
     throw new Error("External eval executes network-backed repositories; rerun with --allow-network");
   }
-  const manifest = assertExternalManifest(JSON.parse(await readFile(options.manifestPath, "utf8")));
+  const manifest = parseExternalEvalManifest(JSON.parse(await readFile(options.manifestPath, "utf8")));
   const manifestRoot = dirname(resolve(options.manifestPath));
   if (!manifest.cases.length && !options.caseName) {
     const result: ExternalEvalResult = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       fixture: "external",
       generatedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
@@ -654,8 +707,11 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
     await mkdir(caseOutput, { recursive: true });
     const baseCase = {
       name: item.name,
+      framework: item.framework,
       repo: item.repo,
       commit: item.commit,
+      license: item.license,
+      expectedSource: item.expectedSource,
       artifactDir,
       status: "failed" as const,
       failureStage: null as EvalFailureStage,
@@ -664,7 +720,9 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
       originalCheckoutModified: false,
       residueFiles: [] as string[],
       proofPath: relative(outputDir, join(caseOutput, "proof.json")),
-      reportPath: relative(outputDir, join(caseOutput, "report.html"))
+      reportPath: relative(outputDir, join(caseOutput, "report.html")),
+      sourceTop1: null,
+      sourceCandidate: null
     };
     if (!item.patchFile || !item.testCommand || !item.devCommand) {
       cases.push({
@@ -684,9 +742,12 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
       }
       tempRoot = await mkdtemp(join(tmpdir(), "buttonprobe-external-"));
       const checkout = join(tempRoot, "repo");
-      const timeoutMs = options.timeoutMs ?? 120_000;
-      await cloneExternalRepository(item.repo, checkout, timeoutMs);
-      const checkoutResult = await runCommand("git", ["checkout", "--detach", item.commit], { cwd: checkout, timeoutMs });
+      const deadline = Date.now() + (options.timeoutMs ?? 120_000);
+      await cloneExternalRepository(item.repo, checkout, deadline);
+      const checkoutResult = await runCommand("git", ["checkout", "--detach", item.commit], {
+        cwd: checkout,
+        timeoutMs: requireBudget(deadline)
+      });
       if (checkoutResult.code !== 0) throw new Error(`Pinned commit checkout failed: ${checkoutResult.stderr.trim()}`);
       const appDirectory = resolve(checkout, item.appDirectory ?? ".");
       if (appDirectory !== checkout && !appDirectory.startsWith(`${checkout}/`)) {
@@ -694,7 +755,11 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
       }
       failureStage = "setup";
       if (item.setup) {
-        const setup = await runCommand(item.setup, [], { cwd: appDirectory, shell: true, timeoutMs });
+        const setup = await runCommand(item.setup, [], {
+          cwd: appDirectory,
+          shell: true,
+          timeoutMs: requireBudget(deadline)
+        });
         if (setup.code !== 0) throw new Error(`Setup failed: ${(setup.stderr || setup.stdout).trim()}`);
       }
       const port = await freePort();
@@ -704,7 +769,29 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
         PORT: String(port),
         BUTTONPROBE_PORT: String(port)
       });
-      await waitForHttp(baseUrl, timeoutMs);
+      await waitForHttp(baseUrl, requireBudget(deadline));
+      const baseline = await scanApplication({
+        baseUrl,
+        outputDir: join(caseOutput, "baseline"),
+        maxPages: 1,
+        interactionTimeoutMs: 750
+      });
+      const baselineControl = sourceControl(baseline.pages[0]?.controls ?? [], item.target);
+      let sourceTop1: boolean | null = null;
+      let sourceCandidate: string | null = null;
+      if (baselineControl) {
+        const sourceIssue: RepairIssue = {
+          controlId: baselineControl.id,
+          pageUrl: baselineControl.pageUrl,
+          selector: baselineControl.selector,
+          label: baselineControl.text || baselineControl.ariaLabel || baselineControl.selector,
+          verdict: baselineControl.verdict === "CRASHED" ? "CRASHED" : baselineControl.verdict === "AMBIGUOUS" ? "AMBIGUOUS" : "INERT",
+          evidence: baselineControl.evidence
+        };
+        const candidates = await locateSourceCandidates(appDirectory, sourceIssue);
+        sourceCandidate = candidates[0]?.path ?? null;
+        sourceTop1 = sourceCandidate === sourceExpectedPath(item.expectedSource, item.appDirectory);
+      }
       const patchPath = resolve(manifestRoot, item.patchFile);
       failureStage = "test";
       const proof = await runPatchVerification({
@@ -718,13 +805,16 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
         ...(item.target ? { targetSelector: item.target } : {})
       });
       const passed = proof.status === "ui-verified" && !proof.originalCheckoutModified;
+      await validateProofArtifacts(proof.proofPath, caseOutput);
       cases.push({
         ...baseCase,
         status: passed ? "passed" : "failed",
         failureStage: passed ? null : proof.status === "test-verified" ? "ui" : "test",
         reason: proof.reason,
         evidenceStatus: proof.status === "ui-verified" ? "ui-verified" : proof.status === "test-verified" ? "test-verified" : "failed",
-        originalCheckoutModified: proof.originalCheckoutModified
+        originalCheckoutModified: proof.originalCheckoutModified,
+        sourceTop1,
+        sourceCandidate
       });
     } catch (error) {
       cases.push({ ...baseCase, reason: (error as Error).message, failureStage });
@@ -734,14 +824,17 @@ export async function runExternalEval(options: ExternalEvalOptions): Promise<Ext
     }
   }
   const result: ExternalEvalResult = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixture: "external",
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
     summary: {
       total: cases.length,
       passed: cases.filter((item) => item.status === "passed").length,
-      sourceTop1Accuracy: null,
+      sourceTop1Accuracy: (() => {
+        const mapped = cases.filter((item) => item.sourceTop1 !== null);
+        return mapped.length ? mapped.filter((item) => item.sourceTop1 === true).length / mapped.length : null;
+      })(),
       uiVerifiedRate: cases.length ? cases.filter((item) => item.evidenceStatus === "ui-verified").length / cases.length : null,
       falseAcceptRate: 0,
       originalRepoPollutionRate: 0,

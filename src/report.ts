@@ -5,6 +5,7 @@ import type {
   AIUsageSummary,
   ModelDataManifest,
   ProofArtifacts,
+  RepairProofStatus,
   RepairLoopResult,
   ScanResult,
   SourceCandidateEvidence,
@@ -18,6 +19,8 @@ export interface ReportData {
   modelDataManifest?: ModelDataManifest;
   aiError?: string;
   originalCheckoutModified?: boolean;
+  proofStatus?: RepairProofStatus;
+  rejectionReason?: string;
   browsers?: UIBrowserResult[];
   artifacts?: ProofArtifacts;
 }
@@ -218,6 +221,7 @@ export async function writeReport(
     <h2>Repair summary</h2>
     <div class="summary">
       <div class="metric">Detected issues<strong>${(counts.INERT ?? 0) + (counts.CRASHED ?? 0) + (counts.AMBIGUOUS ?? 0)}</strong></div>
+      ${data.proofStatus ? `<div class="metric">Proof status<strong>${escapeHtml(data.proofStatus)}</strong></div>` : ""}
       <div class="metric">Verified diffs<strong>${verifiedDiffs}</strong></div>
       <div class="metric">Model calls<strong>${modelCalls}</strong></div>
       <div class="metric">Input tokens<strong>${data.usageSummary?.inputTokens ?? 0}</strong></div>
@@ -226,6 +230,7 @@ export async function writeReport(
       <div class="metric">Cost estimate<strong>${data.usageSummary?.estimatedCostUsd === undefined ? "unknown" : `$${data.usageSummary.estimatedCostUsd.toFixed(4)}`}</strong></div>
     </div>
     <p>original checkout modified: ${originalCheckoutModified}</p>
+    ${data.rejectionReason ? `<p class="error">Rejection reason: ${escapeHtml(data.rejectionReason)}</p>` : ""}
     ${browsers.length ? `<p><strong>Browser matrix:</strong> ${browsers.map((browser) => `${escapeHtml(browser.browser)}: ${escapeHtml(browser.status)}`).join(" · ")}</p>` : ""}
     ${data.modelDataManifest ? `<p>Model data: ${escapeHtml(data.modelDataManifest.endpointHost)} · ${data.modelDataManifest.sourceFiles.length} source file(s) · ${data.modelDataManifest.screenshotCount} screenshot(s) · redaction ${data.modelDataManifest.redactionApplied ? "enabled" : "disabled"}</p>` : ""}
     ${artifactLines.length ? `<p><strong>Proof artifacts:</strong> ${artifactLines.map(escapeHtml).join(" · ")}</p>` : ""}

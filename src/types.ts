@@ -122,6 +122,7 @@ export interface SourceCandidate {
 export type SourceCandidateEvidence = Pick<SourceCandidate, "path" | "score" | "reason" | "strongIdentity" | "eventChain">;
 
 export type ProofStatus = "patch-generated" | "patch-applies" | "test-verified" | "ui-verified" | "rejected";
+export type RepairProofStatus = Exclude<ProofStatus, "patch-generated">;
 export type RepairEvidenceStatus = "generated" | "test-verified" | "ui-verified" | "failed";
 
 export interface RepairAttempt {
@@ -240,6 +241,38 @@ export interface ProofArtifacts {
   proof?: string;
   testLog?: string;
   screenshots?: string[];
+}
+
+export interface RepairProofV2 {
+  schemaVersion: 2;
+  status: RepairProofStatus;
+  patch: {
+    source: string;
+    sha256: string;
+  };
+  target?: {
+    id: string;
+    selector: string;
+    baseline: "inert" | "crashed" | "ambiguous";
+    patchedWorks: boolean;
+  };
+  tests: {
+    passed: boolean;
+    command: string;
+    log: string;
+  };
+  browsers: UIBrowserResult[];
+  scenario?: BehaviorContractVerification;
+  regressions: string[];
+  originalCheckoutModified: boolean;
+  modelCalls: number;
+  artifacts: {
+    report: string;
+    verifiedDiff?: string;
+    screenshots: string[];
+    testLog: string;
+  };
+  rejectionReason?: string;
 }
 
 export interface ScanControl {
