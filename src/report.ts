@@ -42,7 +42,13 @@ function repairTimeline(result: RepairLoopResult): string {
   const attempts = result.attempts
     .map(
       (attempt) => `<details>
-        <summary>Round ${attempt.round}: ${escapeHtml(attempt.decision)}</summary>
+        <summary>Round ${attempt.round}${
+          attempt.patchSource === "template"
+            ? ` &middot; deterministic template ${escapeHtml(attempt.templateId ?? "")} &middot; 0 model calls`
+            : attempt.patchSource === "model" && attempt.templateFallback
+              ? " &middot; model fallback after template"
+              : ""
+        }: ${escapeHtml(attempt.decision)}</summary>
         <p>${escapeHtml(attempt.reason)}</p>
         ${attempt.attempt?.patch ? `<pre><code>${escapeHtml(attempt.attempt.patch)}</code></pre>` : ""}
         ${

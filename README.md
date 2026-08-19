@@ -25,8 +25,8 @@ npx buttonprobe verify http://localhost:5173 \
 
 | Suite | Result | Source Top-1 | Residue | Evidence date |
 | --- | --- | --- | --- | --- |
-| Viral | 5/5 passing | 1 | 0 | 2026-08-17 |
-| React | 9/10 UI-verified | 1 | 0 | 2026-08-17 |
+| Viral | 5/5 passing | 1 | 0 | 2026-08-19 |
+| React | 9/10 UI-verified | 1 | 0 | 2026-08-19 |
 
 Generated from real local eval artifacts in `benchmarks/latest.json`.
 <!-- benchmark:end -->
@@ -65,15 +65,17 @@ flowchart LR
 ## Why People Star It
 
 - **Works with your AI stack:** GPT, Claude, DeepSeek, OpenRouter-compatible endpoints, or local Ollama.
+- **Zero-model deterministic repair:** common dead-button patterns are fixed by built-in templates with **0 model calls** and 0 API cost, then proven through the same worktree + browser gate.
 - **No backend:** no hosted model proxy, no telemetry, no database.
 - **Safe by default:** repair runs in a detached Git worktree and keeps your current checkout clean.
 - **Verifies other agents:** `verify --patch` checks diffs from Claude, Codex, Cursor, or a human reviewer with **0 model calls**.
+- **MCP server for agents:** `buttonprobe mcp` exposes scan / verify / doctor tools to Claude Code, Cursor, and Codex so any agent can prove its UI patch before merge.
 - **Proof-carrying output:** `verified.diff`, `proof.json`, before/after screenshots, test logs, source candidates, and `report.html`.
 - **Narrow on purpose:** React/Vite dead-button repair first; broader scanning still works for local web apps.
 
 ## 10 Second Demo
 
-Run the zero-cost public eval. It uses the packaged mock OpenAI-compatible endpoint, so you do not need an API key.
+Run the zero-cost public eval. Two repairs come from built-in deterministic templates with zero model calls; the rest use the packaged mock OpenAI-compatible endpoint. You do not need an API key.
 
 ```bash
 npx playwright install chromium
@@ -93,9 +95,9 @@ ButtonProbe’s automatic repair loop currently targets local React JavaScript/T
 
 | Case | Evidence |
 | --- | --- |
-| empty `onClick` | UI-verified |
+| empty `onClick` | UI-verified, deterministic template, 0 model calls |
 | wrong state update | UI-verified |
-| missing route navigation | UI-verified |
+| missing route navigation | UI-verified, deterministic template, 0 model calls |
 | stale closure state update | UI-verified |
 | wrong setter target | UI-verified |
 | disabled submit handler | UI-verified |
@@ -110,7 +112,62 @@ npx buttonprobe eval viral
 npx buttonprobe eval react
 ```
 
-The React suite runs 10 isolated Git fixtures. Nine repairs reach `ui-verified`, one intentionally fails UI verification, and one working control is preserved. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
+The React suite runs 10 isolated Git fixtures. Nine repairs reach `ui-verified` (two of them with zero model calls), one intentionally fails UI verification, and one working control is preserved. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
+
+## Zero-Model Deterministic Repair
+
+Some dead-button patterns are unambiguous, so ButtonProbe repairs them without calling any model:
+
+| Template | Fires when | Generates |
+| --- | --- | --- |
+| `empty-onclick-setter` | empty `onClick`, strong identity, resolved event chain, exactly one `useState` setter, and a scenario with exactly one `text` expectation | `onClick={() => setX("<expected text>")}` |
+| `missing-route-navigation` | empty `onClick`, strong identity, resolved event chain, and a scenario `urlIncludes` expectation with an absolute path | `onClick={() => navigate("<path>")}` when the file already uses `useNavigate`, otherwise `onClick={() => window.history.pushState({}, "", "<path>")}` |
+
+Rules are deliberately strict:
+
+- Template patches run through the exact same gate as model patches: patch validation, isolated worktree tests, browser UI verification, scenario checks, and same-page regression protection.
+- A template that fails verification escalates to your model when one is configured; otherwise the run is blocked with an explicit reason.
+- Without any scenario evidence, no template fires. ButtonProbe never guesses.
+- `buttonprobe fix` works with no model configured at all when a template matches; the report and eval record `patchSource: template` and `modelCalls: 0`.
+
+## MCP Server
+
+`buttonprobe mcp` starts a Model Context Protocol stdio server with three tools. All of them make **zero model calls**:
+
+| Tool | Purpose |
+| --- | --- |
+| `buttonprobe_scan` | Click every control and report dead buttons |
+| `buttonprobe_verify` | Prove an external diff (Claude, Codex, Cursor, human) in an isolated worktree |
+| `buttonprobe_doctor` | Readiness checks with actionable fixes |
+
+Claude Code:
+
+```bash
+claude mcp add buttonprobe -- npx buttonprobe mcp
+```
+
+Cursor (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "buttonprobe": {
+      "command": "npx",
+      "args": ["buttonprobe", "mcp"]
+    }
+  }
+}
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.buttonprobe]
+command = "npx"
+args = ["buttonprobe", "mcp"]
+```
+
+Let your agent write the patch, then ask it to call `buttonprobe_verify` before merge. The tool returns the proof status plus absolute paths to `proof.json`, `report.html`, and `verified.diff`, and it never applies a patch unless you pass `apply: true` and the patch reached `ui-verified`.
 
 ## GitHub Action
 
@@ -291,6 +348,7 @@ npx buttonprobe eval viral
 npx buttonprobe eval react
 npx buttonprobe doctor http://localhost:5173 --test-command "npm test"
 npx buttonprobe init --url http://localhost:5173 --test-command "npm test"
+npx buttonprobe mcp
 ```
 
 Use `--no-images` to reduce model input cost.

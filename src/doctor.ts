@@ -1,5 +1,6 @@
 import { access, constants } from "node:fs/promises";
 import { inspectGitWorkspace } from "./git-workspace.js";
+import { repairTemplateDescriptions } from "./repair-templates.js";
 
 export interface DoctorOptions {
   projectRoot: string;
@@ -60,6 +61,11 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
       name: "Localhost URL",
       ok: isLocalhost(options.url),
       message: isLocalhost(options.url) ? `Using ${options.url}` : "Use a localhost URL, for example http://localhost:5173"
+    },
+    {
+      name: "Deterministic templates",
+      ok: true,
+      message: `Built-in zero-model templates: ${Object.keys(repairTemplateDescriptions).join(", ")}`
     },
     {
       name: "Model config",

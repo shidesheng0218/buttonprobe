@@ -48,3 +48,18 @@ test("rejects an unverified proof that claims the target was fixed", () => {
     artifacts: { report: "report.html", screenshots: [], testLog: "test.log" }
   })).toThrow("ui-verified");
 });
+
+test("accepts deterministic template patch sources", () => {
+  const proof = createRepairProofV2({
+    status: "test-verified",
+    patch: { source: "template:empty-onclick-setter", content: "--- a/src/App.tsx\n+++ b/src/App.tsx\n" },
+    tests: { passed: true, command: "npm test", log: "test.log" },
+    browsers: [],
+    regressions: [],
+    originalCheckoutModified: false,
+    modelCalls: 0,
+    artifacts: { report: "report.html", screenshots: [], testLog: "test.log" }
+  });
+  expect(proof.patch.source).toBe("template:empty-onclick-setter");
+  expect(proof.modelCalls).toBe(0);
+});

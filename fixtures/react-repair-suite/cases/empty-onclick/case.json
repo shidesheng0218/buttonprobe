@@ -2,6 +2,8 @@
   "name": "empty onClick",
   "testId": "empty-onclick",
   "label": "Empty onClick",
+  "repairStrategy": "template",
+  "scenario": { "expect": [{ "type": "text", "value": "fixed" }] },
   "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"empty-onclick\" onClick={() => {}}>Empty onClick</button>;\n}\n",
   "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"empty-onclick\" onClick={() => setStatus(\"fixed\")}>Empty onClick</button>;\n}\n"
 }

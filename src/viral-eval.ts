@@ -11,6 +11,7 @@ import { runPatchVerification, validateProofArtifacts } from "./patch-proof.js";
 import type { RepairEvidenceStatus, RepairIssue, ScanControl, SourceCandidate } from "./types.js";
 import { scanApplication } from "./scanner.js";
 import { runButtonProbe } from "./workflow.js";
+import type { ScenarioExpectation, ScenarioForbid } from "./types.js";
 
 export type EvalFailureStage = "clone" | "setup" | "scan" | "locate" | "model" | "validate" | "test" | "ui" | "cleanup" | null;
 
@@ -41,6 +42,9 @@ export interface ViralBenchmark {
   beforeScreenshot: string;
   afterScreenshot: string;
   outcome: "pass" | "fail";
+  repairStrategy?: "template" | "model";
+  patchSource?: "model" | "template" | "external";
+  templateId?: string;
 }
 
 export interface ViralEvalResult {
@@ -139,6 +143,11 @@ interface FixtureCase {
   fixedSource: string;
   normal?: boolean;
   forceUiFailure?: boolean;
+  repairStrategy?: "template" | "model";
+  scenario?: {
+    expect?: ScenarioExpectation[];
+    forbid?: ScenarioForbid[];
+  };
 }
 
 interface CaseRunOptions {
@@ -348,13 +357,17 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
   await mkdir(artifactRoot, { recursive: true });
   if (options.dirty) await writeFile(join(state.root, "notes.txt"), "intentionally dirty\n");
   const initialStatus = await gitStatus(state.root);
+  const templateOnly = state.fixture.repairStrategy === "template";
   const appPort = await freePort();
-  const modelPort = await freePort();
+  const modelPort = templateOnly ? 0 : await freePort();
   const app = startProcess(process.execPath, ["fixture-server.mjs"], state.root, { PORT: String(appPort) });
-  const model = startProcess(process.execPath, ["fixture-model.mjs"], state.root, { PORT: String(modelPort) });
+  const model = templateOnly
+    ? undefined
+    : startProcess(process.execPath, ["fixture-model.mjs"], state.root, { PORT: String(modelPort) });
   try {
     await waitForHttp(`http://127.0.0.1:${appPort}`, options.timeoutMs);
-    await waitForHttp(`http://127.0.0.1:${modelPort}/v1/chat/completions`, options.timeoutMs);
+    if (model) await waitForHttp(`http://127.0.0.1:${modelPort}/v1/chat/completions`, options.timeoutMs);
+    const scenarioSelector = `[data-testid="${state.fixture.testId}"]`;
     const workflowPromise = runButtonProbe({
       baseUrl: `http://127.0.0.1:${appPort}`,
       outputDir: artifactRoot,
@@ -362,14 +375,25 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       maxPages: 1,
       interactionTimeoutMs: 80,
       unsafe: false,
-      ai: true,
+      ai: !templateOnly,
       fix: true,
       testCommand: "node fixture-test.mjs",
       devCommand: "node fixture-server.mjs",
       maxRounds: 1,
       images: false,
-      apiBaseUrl: `http://127.0.0.1:${modelPort}/v1`,
-      model: "buttonprobe-eval-mock",
+      ...(templateOnly ? {} : { apiBaseUrl: `http://127.0.0.1:${modelPort}/v1`, model: "buttonprobe-eval-mock" }),
+      ...(state.fixture.scenario
+        ? {
+            scenarios: {
+              [state.fixture.testId]: {
+                target: scenarioSelector,
+                actions: [{ type: "click" as const, selector: scenarioSelector }],
+                ...(state.fixture.scenario.expect ? { expect: state.fixture.scenario.expect } : {}),
+                ...(state.fixture.scenario.forbid ? { forbid: state.fixture.scenario.forbid } : {})
+              }
+            }
+          }
+        : {}),
       maxFixIssues: 1
     });
     const workflow = options.timeoutMs
@@ -436,6 +460,9 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
         : !state.fixture.forceUiFailure && evidenceStatus === "ui-verified" && counterfactualVerified;
     const outcome = expectedPass && !originalCheckoutModified && residueFiles.length === 0 ? "pass" : "fail";
     const usage = workflow.usageSummary;
+    if (templateOnly && (usage?.modelCalls ?? 0) > 0) {
+      throw new Error(`Template eval case ${options.slug} made ${usage?.modelCalls} model call(s); expected zero`);
+    }
     return {
       benchmark: {
         name: options.dirty ? "dirty worktree patch-only" : state.fixture.name,
@@ -463,7 +490,10 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
         testLogPath: relativeArtifact(options.outputDir, testLogPath),
         beforeScreenshot,
         afterScreenshot,
-        outcome
+        outcome,
+        ...(state.fixture.repairStrategy ? { repairStrategy: state.fixture.repairStrategy } : {}),
+        ...(attempt?.patchSource ? { patchSource: attempt.patchSource } : {}),
+        ...(attempt?.templateId ? { templateId: attempt.templateId } : {})
       },
       modelCalls: usage?.modelCalls ?? workflow.assessments.length + workflow.repairs.reduce((count, item) => count + item.result.attempts.length, 0),
       inputTokens: usage?.inputTokens ?? workflow.assessments.reduce((total, page) => total + page.usage.inputTokens, 0),
@@ -471,7 +501,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       costEstimateUsd: usage?.estimatedCostUsd ?? 0
     };
   } finally {
-    await Promise.all([stopProcess(app), stopProcess(model)]);
+    await Promise.all([stopProcess(app), ...(model ? [stopProcess(model)] : [])]);
     await rm(state.parent, { recursive: true, force: true });
   }
 }
@@ -527,7 +557,9 @@ function assembleResult(fixture: string, startedAt: number, runs: CaseRunResult[
     fixture,
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    modelProvider: "openai-compatible-mock",
+    modelProvider: runs.length > 0 && runs.every((run) => run.modelCalls === 0)
+      ? "deterministic-template"
+      : "openai-compatible-mock",
     modelCalls: runs.reduce((total, run) => total + run.modelCalls, 0),
     inputTokens: runs.reduce((total, run) => total + run.inputTokens, 0),
     outputTokens: runs.reduce((total, run) => total + run.outputTokens, 0),
@@ -560,6 +592,14 @@ export async function validateEvalArtifacts(result: ViralEvalResult, outputDir: 
   for (const benchmark of result.benchmarks) {
     if (benchmark.repairStatus === "verified" && !benchmark.counterfactualVerified) {
       throw new Error(`Verified eval repair is missing counterfactual evidence: ${benchmark.name}`);
+    }
+    if (benchmark.repairStrategy === "template") {
+      if (benchmark.patchSource !== "template") {
+        throw new Error(`Template eval case was not repaired by a deterministic template: ${benchmark.name}`);
+      }
+      if (!benchmark.fixtureName.endsWith("-dirty") && benchmark.evidenceStatus !== "ui-verified") {
+        throw new Error(`Template eval case did not reach ui-verified with zero model calls: ${benchmark.name}`);
+      }
     }
     const paths = [benchmark.artifactDir, benchmark.beforeScreenshot, benchmark.afterScreenshot, benchmark.testLogPath];
     if (benchmark.evidenceStatus === "test-verified" || benchmark.evidenceStatus === "ui-verified") {

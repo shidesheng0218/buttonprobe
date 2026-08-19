@@ -2,6 +2,9 @@
   "name": "missing route navigation",
   "testId": "missing-route",
   "label": "Missing route navigation",
+  "repairStrategy": "template",
+  "scenario": { "expect": [{ "type": "urlIncludes", "value": "/settings" }] },
+  "worksOnclick": "window.history.pushState({}, '', '/settings')",
   "source": "export function App() {\n  return <button data-testid=\"missing-route\" onClick={() => {}}>Missing route navigation</button>;\n}\n",
   "fixedSource": "export function App() {\n  return <button data-testid=\"missing-route\" onClick={() => window.history.pushState({}, \"\", \"/settings\")}>Missing route navigation</button>;\n}\n"
 }

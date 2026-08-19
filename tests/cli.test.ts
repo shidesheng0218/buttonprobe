@@ -57,11 +57,20 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("--browser");
   });
 
-  test("rejects fix mode without a model configuration", async () => {
-    const result = await runCli(["http://localhost:3000", "--fix"]);
+  test("fix mode without a model configuration falls back to deterministic templates", async () => {
+    const result = await runCli(["http://localhost:3000", "--fix"], {
+      env: { BUTTONPROBE_BASE_URL: "", BUTTONPROBE_MODEL: "", BUTTONPROBE_API_KEY: "" }
+    });
 
     expect(result.code).not.toBe(0);
-    expect(result.output).toContain("BUTTONPROBE_BASE_URL");
+    expect(result.output).not.toContain("AI mode requires BUTTONPROBE_BASE_URL");
+  });
+
+  test("mcp subcommand is documented", async () => {
+    const result = await runCli(["mcp", "--help"]);
+
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("stdio");
   });
 
   test("scan subcommand runs without AI configuration", async () => {

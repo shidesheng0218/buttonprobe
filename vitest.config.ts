@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
@@ -6,6 +6,6 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 60_000,
     fileParallelism: false,
-    exclude: [".buttonprobe/**"]
+    exclude: [...configDefaults.exclude, ".buttonprobe/**"]
   }
 });

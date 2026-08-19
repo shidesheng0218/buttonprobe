@@ -86,4 +86,67 @@ describe("runRepairLoop", () => {
     expect(result.status).toBe("blocked");
     expect(deps.applyPatch).not.toHaveBeenCalled();
   });
+
+  test("accepts a deterministic template patch before calling the model", async () => {
+    const templateAttempt: RepairAttempt = {
+      diagnosis: "Deterministic template",
+      sourceConfidence: 1,
+      expectedOutcome: "Increment",
+      patch: "template-patch",
+      affectedControls: ["button-1"],
+      risk: "low"
+    };
+    const deps = dependencies({
+      templateRepair: vi.fn(async () => ({ attempt: templateAttempt, templateId: "empty-onclick-setter" }))
+    });
+
+    const result = await runRepairLoop(issue, deps, { maxRounds: 3 });
+
+    expect(result.status).toBe("fixed");
+    expect(deps.requestRepair).not.toHaveBeenCalled();
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts[0]?.patchSource).toBe("template");
+    expect(result.attempts[0]?.templateId).toBe("empty-onclick-setter");
+    expect(result.attempts[0]?.round).toBe(0);
+  });
+
+  test("falls back to the model when the template patch fails verification", async () => {
+    const templateAttempt: RepairAttempt = {
+      diagnosis: "Deterministic template",
+      sourceConfidence: 1,
+      expectedOutcome: "Increment",
+      patch: "template-patch",
+      affectedControls: ["button-1"],
+      risk: "low"
+    };
+    const deps = dependencies({
+      templateRepair: vi.fn(async () => ({ attempt: templateAttempt, templateId: "empty-onclick-setter" })),
+      runTests: vi
+        .fn()
+        .mockResolvedValueOnce({ passed: false, command: "npm test", output: "template failed" })
+        .mockResolvedValueOnce({ passed: true, command: "npm test", output: "model passed" })
+    });
+
+    const result = await runRepairLoop(issue, deps, { maxRounds: 3 });
+
+    expect(result.status).toBe("fixed");
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts[0]?.patchSource).toBe("template");
+    expect(result.attempts[0]?.decision).toBe("rolled-back");
+    expect(result.attempts[1]?.patchSource).toBe("model");
+    expect(result.attempts[1]?.templateFallback).toBe(true);
+    expect(deps.requestRepair).toHaveBeenCalledTimes(1);
+  });
+
+  test("keeps model-first behavior when no template matches", async () => {
+    const deps = dependencies({
+      templateRepair: vi.fn(async () => null)
+    });
+
+    const result = await runRepairLoop(issue, deps, { maxRounds: 3 });
+
+    expect(result.status).toBe("fixed");
+    expect(result.attempts[0]?.patchSource).toBe("model");
+    expect(result.attempts[0]?.templateFallback).toBeUndefined();
+  });
 });

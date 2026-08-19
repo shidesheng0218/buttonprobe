@@ -110,7 +110,8 @@ async function execute(url: string, command: Command, mode: CliMode): Promise<vo
     throw new Error(`Unknown profile "${profileName}". Define it in buttonprobe.config.json profiles.`);
   }
   const model = process.env.BUTTONPROBE_MODEL ?? config.model ?? repairModel ?? analysisModel;
-  if ((aiOptions.ai || aiOptions.fix) && (!apiBaseUrl || !model)) {
+  const modelRequired = aiOptions.ai && !aiOptions.fix;
+  if (modelRequired && (!apiBaseUrl || !model)) {
     throw new Error("AI mode requires BUTTONPROBE_BASE_URL and BUTTONPROBE_MODEL (or stage-specific models)");
   }
 
@@ -368,6 +369,20 @@ program
         "API keys are not stored. Configure BUTTONPROBE_BASE_URL, BUTTONPROBE_MODEL, and BUTTONPROBE_API_KEY in your shell."
       ].join("\n") + "\n"
     );
+  });
+
+program
+  .command("mcp")
+  .description("start the ButtonProbe MCP stdio server (scan, verify, doctor tools; zero model calls)")
+  .action(async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const { runMcpServer } = await import("./mcp.js");
+    const pkg = JSON.parse(
+      await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8")
+    ) as { version?: string };
+    await runMcpServer(pkg.version ?? "0.1.0");
   });
 
 program.parseAsync(process.argv).catch((error) => {

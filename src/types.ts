@@ -186,6 +186,14 @@ export interface RepairDependencies {
   rollbackPatch(patch: string): Promise<void>;
   runTests(): Promise<TestResult>;
   verifyUI(issue: RepairIssue): Promise<UIVerification>;
+  /**
+   * Optional deterministic template step tried before any model call.
+   * Returning null means no template matched and the loop uses the model.
+   */
+  templateRepair?(
+    issue: RepairIssue,
+    sources: SourceCandidate[]
+  ): Promise<{ attempt: RepairAttempt; templateId: string } | null>;
 }
 
 export interface RepairAttemptRecord {
@@ -196,6 +204,9 @@ export interface RepairAttemptRecord {
   ui?: UIVerification;
   decision: "accepted" | "rolled-back" | "rejected";
   reason: string;
+  patchSource?: "model" | "template" | "external";
+  templateId?: string;
+  templateFallback?: boolean;
 }
 
 export interface RepairLoopResult {

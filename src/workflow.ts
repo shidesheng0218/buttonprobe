@@ -9,6 +9,7 @@ import { verifyBehaviorContract, verifyScenarioContract } from "./behavior-contr
 import { buildInteractionRegressionTest, interactionChangesAfterClick } from "./regression-test.js";
 import { buildRepairPrompt } from "./repair-prompt.js";
 import { runRepairLoop } from "./repair-loop.js";
+import { buildTemplateAttempt, matchRepairTemplates } from "./repair-templates.js";
 import { writeReport } from "./report.js";
 import { scanApplication } from "./scanner.js";
 import { isTrustedSourceCandidate, locateSourceCandidates } from "./source-locator.js";
@@ -17,6 +18,7 @@ import type {
   AIPageAssessment,
   AIUsageSummary,
   ModelDataManifest,
+  RepairAttempt,
   RepairAttemptRecord,
   RepairIssue,
   RepairLoopResult,
@@ -110,12 +112,13 @@ function analysisCacheKey(pageUrl: string, controls: ScanControl[]): string {
 function patchOnlyResult(
   round: number,
   attempt: NonNullable<RepairAttemptRecord["attempt"]>,
-  reason: string
+  reason: string,
+  meta: Pick<RepairAttemptRecord, "patchSource" | "templateId"> = {}
 ): RepairLoopResult {
   return {
     status: "blocked",
     stopReason: reason,
-    attempts: [{ round, attempt, decision: "rejected", reason }],
+    attempts: [{ round, attempt, decision: "rejected", reason, ...meta }],
     evidenceStatus: "generated"
   };
 }
@@ -204,8 +207,36 @@ async function requestPatchOnly(
   return patchOnlyResult(1, response.attempt, reason);
 }
 
+async function templatePatchOnly(
+  issue: RepairIssue,
+  projectRoot: string,
+  outputDir: string,
+  reason: string,
+  scenarios: WorkflowOptions["scenarios"]
+): Promise<RepairLoopResult> {
+  const sources = await locateSourceCandidates(projectRoot, issue);
+  if (sources.length === 0) {
+    return { status: "blocked", attempts: [], stopReason: "No credible source candidates found" };
+  }
+  const scenario = scenarioForControl(issue.controlId, issue.selector, issue.pageUrl, scenarios);
+  const match = matchRepairTemplates(issue, sources, scenario ? { scenario } : {});
+  if (!match) {
+    return {
+      status: "blocked",
+      attempts: [],
+      stopReason: "No model configured and no deterministic template matched this issue",
+      evidenceStatus: "failed"
+    };
+  }
+  const attempt = buildTemplateAttempt(match, issue);
+  const patchesDir = join(outputDir, "patches");
+  await mkdir(patchesDir, { recursive: true });
+  await writeFile(join(patchesDir, `${safeArtifactName(issue.controlId)}.diff`), attempt.patch);
+  return patchOnlyResult(0, attempt, reason, { patchSource: "template", templateId: match.templateId });
+}
+
 async function requestVerifiedPatchInWorktree(
-  client: AIClient,
+  client: AIClient | undefined,
   issue: RepairIssue,
   projectRoot: string,
   outputDir: string,
@@ -226,6 +257,15 @@ async function requestVerifiedPatchInWorktree(
     return { status: "blocked", attempts: [], stopReason: "No credible source candidates found", evidenceStatus: "failed" };
   }
   if (!isTrustedSourceCandidate(sources[0])) {
+    if (!client) {
+      return {
+        status: "blocked",
+        attempts: [],
+        stopReason:
+          "Deterministic source confidence is below the automatic verification threshold and no model is configured",
+        evidenceStatus: "failed"
+      };
+    }
     return requestPatchOnly(
       client,
       issue,
@@ -250,20 +290,11 @@ async function requestVerifiedPatchInWorktree(
     ? !(await interactionChangesAfterClick({ url: issue.pageUrl, selector: issue.selector, timeoutMs: interactionTimeoutMs }))
     : false;
 
-  for (let round = 1; round <= boundedRounds; round += 1) {
-    const prompt = buildRepairPrompt({ issue, sources: sources.slice(0, 5), round, previousAttempts: attempts });
-    const attempt = (await client.repair({ prompt, imageDataUrls })).attempt;
-    if (attempt.risk === "high") {
-      attempts.push({ round, attempt, decision: "rejected", reason: "High-risk patch requires manual review" });
-      return { status: "blocked", attempts, stopReason: "Model produced a high-risk patch", evidenceStatus: lastEvidenceStatus };
-    }
-    const fingerprint = createHash("sha256").update(attempt.patch.trim()).digest("hex");
-    if (fingerprints.has(fingerprint)) {
-      attempts.push({ round, attempt, decision: "rejected", reason: "Repeated equivalent patch" });
-      return { status: "blocked", attempts, stopReason: "Repair loop repeated an equivalent patch", evidenceStatus: lastEvidenceStatus };
-    }
-    fingerprints.add(fingerprint);
-
+  const runWorktreeRound = async (
+    round: number,
+    attempt: RepairAttempt,
+    meta: Pick<RepairAttemptRecord, "patchSource" | "templateId" | "templateFallback">
+  ): Promise<RepairLoopResult | undefined> => {
     const validation = await validatePatch(projectRoot, attempt.patch);
     if (!validation.ok) {
       attempts.push({
@@ -271,9 +302,10 @@ async function requestVerifiedPatchInWorktree(
         attempt,
         validation,
         decision: "rejected",
-        reason: validation.reason ?? "Patch validation failed"
+        reason: validation.reason ?? "Patch validation failed",
+        ...meta
       });
-      continue;
+      return undefined;
     }
 
     const roundOutputDir = join(repairOutputDir, `round-${round}`);
@@ -353,7 +385,8 @@ async function requestVerifiedPatchInWorktree(
       decision: verified.ok ? "accepted" : "rolled-back",
       reason: verified.ok
         ? "Patch verified in an isolated worktree; current checkout was not modified"
-        : verified.reason ?? "Patch failed in an isolated worktree"
+        : verified.reason ?? "Patch failed in an isolated worktree",
+      ...meta
     };
     attempts.push(record);
 
@@ -374,6 +407,54 @@ async function requestVerifiedPatchInWorktree(
           : "Patch test-verified in an isolated worktree; UI verification was not completed"
       };
     }
+    return undefined;
+  };
+
+  const issueScenario = scenarioForControl(issue.controlId, issue.selector, issue.pageUrl, scenarios);
+  const templateMatch = matchRepairTemplates(issue, sources, issueScenario ? { scenario: issueScenario } : {});
+  let templateFailed = false;
+  if (templateMatch) {
+    const templateAttempt = buildTemplateAttempt(templateMatch, issue);
+    fingerprints.add(createHash("sha256").update(templateAttempt.patch.trim()).digest("hex"));
+    const templateResult = await runWorktreeRound(0, templateAttempt, {
+      patchSource: "template",
+      templateId: templateMatch.templateId
+    });
+    if (templateResult) return templateResult;
+    templateFailed = true;
+  }
+
+  if (!client) {
+    return {
+      status: "blocked",
+      attempts,
+      evidenceStatus: lastEvidenceStatus,
+      stopReason: templateMatch
+        ? "Deterministic template patch failed isolated verification and no model is configured"
+        : "No model configured and no deterministic template matched this issue"
+    };
+  }
+
+  for (let round = 1; round <= boundedRounds; round += 1) {
+    const prompt = buildRepairPrompt({ issue, sources: sources.slice(0, 5), round, previousAttempts: attempts });
+    const attempt = (await client.repair({ prompt, imageDataUrls })).attempt;
+    const modelMeta: Pick<RepairAttemptRecord, "patchSource" | "templateFallback"> = {
+      patchSource: "model",
+      ...(templateFailed ? { templateFallback: true } : {})
+    };
+    if (attempt.risk === "high") {
+      attempts.push({ round, attempt, decision: "rejected", reason: "High-risk patch requires manual review", ...modelMeta });
+      return { status: "blocked", attempts, stopReason: "Model produced a high-risk patch", evidenceStatus: lastEvidenceStatus };
+    }
+    const fingerprint = createHash("sha256").update(attempt.patch.trim()).digest("hex");
+    if (fingerprints.has(fingerprint)) {
+      attempts.push({ round, attempt, decision: "rejected", reason: "Repeated equivalent patch", ...modelMeta });
+      return { status: "blocked", attempts, stopReason: "Repair loop repeated an equivalent patch", evidenceStatus: lastEvidenceStatus };
+    }
+    fingerprints.add(fingerprint);
+
+    const roundResult = await runWorktreeRound(round, attempt, modelMeta);
+    if (roundResult) return roundResult;
   }
 
   return {
@@ -440,30 +521,30 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
 
   let client: AIClient | undefined;
   if (options.ai) {
-    if (!options.apiBaseUrl || !options.model) {
+    if (options.apiBaseUrl && options.model) {
+      client = new AIClient({
+        ...(options.provider ? { provider: options.provider } : {}),
+        baseUrl: options.apiBaseUrl,
+        model: options.model,
+        cacheDir: join(outputDir, "cache"),
+        ...(options.analysisModel ? { analysisModel: options.analysisModel } : {}),
+        ...(options.repairModel ? { repairModel: options.repairModel } : {}),
+        analyzeMaxTokens: options.analyzeMaxTokens ?? 1200,
+        repairMaxTokens: options.repairMaxTokens ?? 3000,
+        maxModelCalls: options.maxModelCalls ?? 14,
+        ...(options.apiKey ? { apiKey: options.apiKey } : {})
+      });
+      try {
+        assessments.push(...(await analyzePages(client, scan, outputDir, options.images)));
+      } catch (error) {
+        aiError = (error as Error).message;
+      }
+    } else if (!options.fix) {
       throw new Error("AI mode requires BUTTONPROBE_BASE_URL and BUTTONPROBE_MODEL");
-    }
-    client = new AIClient({
-      ...(options.provider ? { provider: options.provider } : {}),
-      baseUrl: options.apiBaseUrl,
-      model: options.model,
-      cacheDir: join(outputDir, "cache"),
-      ...(options.analysisModel ? { analysisModel: options.analysisModel } : {}),
-      ...(options.repairModel ? { repairModel: options.repairModel } : {}),
-      analyzeMaxTokens: options.analyzeMaxTokens ?? 1200,
-      repairMaxTokens: options.repairMaxTokens ?? 3000,
-      maxModelCalls: options.maxModelCalls ?? 14,
-      ...(options.apiKey ? { apiKey: options.apiKey } : {})
-    });
-    try {
-      assessments.push(...(await analyzePages(client, scan, outputDir, options.images)));
-    } catch (error) {
-      aiError = (error as Error).message;
     }
   }
 
   if (options.fix) {
-    if (!client) throw new Error("Fix mode requires AI configuration");
     const workspace = initialWorkspace ?? (await inspectGitWorkspace(projectRoot));
     const canApply = workspace.isRepository && workspace.clean && Boolean(options.testCommand);
     const blockedReason = !workspace.isRepository
@@ -491,7 +572,9 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
         try {
           repairs.push({
             controlId: control.id,
-            result: await requestPatchOnly(client, issue, projectRoot, outputDir, blockedReason)
+            result: client
+              ? await requestPatchOnly(client, issue, projectRoot, outputDir, blockedReason)
+              : await templatePatchOnly(issue, projectRoot, outputDir, blockedReason, options.scenarios)
           });
         } catch (error) {
           repairs.push({
@@ -541,14 +624,22 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
       if (!isTrustedSourceCandidate(applySources[0])) {
         repairs.push({
           controlId: control.id,
-          result: await requestPatchOnly(
-            client,
-            issue,
-            projectRoot,
-            outputDir,
-            "Deterministic source confidence is below the automatic verification threshold; generated patch only",
-            applySources
-          )
+          result: client
+            ? await requestPatchOnly(
+                client,
+                issue,
+                projectRoot,
+                outputDir,
+                "Deterministic source confidence is below the automatic verification threshold; generated patch only",
+                applySources
+              )
+            : {
+                status: "blocked",
+                attempts: [],
+                stopReason:
+                  "Deterministic source confidence is below the automatic verification threshold and no model is configured",
+                evidenceStatus: "failed"
+              }
         });
         continue;
       }
@@ -563,7 +654,15 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
         issue,
         {
           locateSources: (target) => locateSourceCandidates(projectRoot, target),
+          templateRepair: async (target, targetSources) => {
+            const scenario = scenarioForControl(target.controlId, target.selector, target.pageUrl, options.scenarios);
+            const match = matchRepairTemplates(target, targetSources, scenario ? { scenario } : {});
+            return match ? { attempt: buildTemplateAttempt(match, target), templateId: match.templateId } : null;
+          },
           requestRepair: async (context) => {
+            if (!client) {
+              throw new Error("Deterministic template did not resolve this issue and no model is configured");
+            }
             const prompt = buildRepairPrompt(context);
             const imageDataUrls = options.images
               ? await Promise.all(
