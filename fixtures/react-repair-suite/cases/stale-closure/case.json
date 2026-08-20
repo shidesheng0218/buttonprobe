@@ -2,6 +2,14 @@
   "name": "stale closure state update",
   "testId": "stale-closure",
   "label": "Stale closure state update",
-  "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"stale-closure\" onClick={() => setTimeout(() => setStatus(status), 10)}>Stale closure state update</button>;\n}\n",
-  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"stale-closure\" onClick={() => setTimeout(() => setStatus(\"fixed\"), 10)}>Stale closure state update</button>;\n}\n"
+  "scenario": {
+    "expect": [
+      {
+        "type": "text",
+        "value": "count:1"
+      }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div>\n      <button\n        data-testid=\"stale-closure\"\n        onClick={() => {\n          setTimeout(() => setCount(count), 10);\n        }}\n      >\n        Stale closure state update\n      </button>\n      <span data-testid=\"status\">count:{count}</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div>\n      <button\n        data-testid=\"stale-closure\"\n        onClick={() => {\n          setTimeout(() => setCount(count + 1), 10);\n        }}\n      >\n        Stale closure state update\n      </button>\n      <span data-testid=\"status\">count:{count}</span>\n    </div>\n  );\n}\n"
 }

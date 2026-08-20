@@ -2,6 +2,14 @@
   "name": "missing callback prop wiring",
   "testId": "missing-callback",
   "label": "Missing callback prop wiring",
-  "source": "function ChildButton({ onAction }: { onAction?: () => void }) {\n  return <button data-testid=\"missing-callback\" onClick={() => onAction?.()}>Missing callback prop wiring</button>;\n}\nexport function App() {\n  return <ChildButton />;\n}\n",
-  "fixedSource": "function ChildButton({ onAction }: { onAction?: () => void }) {\n  return <button data-testid=\"missing-callback\" onClick={() => onAction?.()}>Missing callback prop wiring</button>;\n}\nexport function App() {\n  return <ChildButton onAction={() => document.body.dataset.fixed = \"true\"} />;\n}\n"
+  "scenario": {
+    "expect": [
+      {
+        "type": "text",
+        "value": "fixed"
+      }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nfunction SaveButton({ onSave }: { onSave: () => void }) {\n  return (\n    <button data-testid=\"missing-callback\" onClick={onSave}>\n      Missing callback prop wiring\n    </button>\n  );\n}\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return (\n    <div>\n      <SaveButton onSave={() => {}} />\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nfunction SaveButton({ onSave }: { onSave: () => void }) {\n  return (\n    <button data-testid=\"missing-callback\" onClick={onSave}>\n      Missing callback prop wiring\n    </button>\n  );\n}\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return (\n    <div>\n      <SaveButton onSave={() => setStatus(\"fixed\")} />\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n"
 }

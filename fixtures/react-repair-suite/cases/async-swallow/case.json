@@ -2,7 +2,22 @@
   "name": "async handler swallows error",
   "testId": "async-swallow",
   "label": "Async handler swallows error",
-  "forceUiFailure": true,
-  "source": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"async-swallow\" onClick={async () => { try { throw new Error(\"boom\"); } catch { setStatus(\"idle\"); } }}>Async handler swallows error</button>;\n}\n",
-  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  return <button data-testid=\"async-swallow\" onClick={async () => { try { await Promise.resolve(); setStatus(\"fixed\"); } catch { setStatus(\"error\"); } }}>Async handler swallows error</button>;\n}\n"
+  "scenario": {
+    "expect": [
+      {
+        "type": "text",
+        "value": "recovered"
+      },
+      {
+        "type": "consoleClean"
+      }
+    ],
+    "forbid": [
+      {
+        "type": "consoleError"
+      }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nasync function loadProfile(): Promise<string> {\n  throw new Error(\"profile request failed\");\n}\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  async function handleClick(): Promise<void> {\n    const result = await loadProfile();\n    setStatus(result);\n  }\n  return (\n    <div>\n      <button data-testid=\"async-swallow\" onClick={() => void handleClick()}>Async handler swallows error</button>\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nasync function loadProfile(): Promise<string> {\n  throw new Error(\"profile request failed\");\n}\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  async function handleClick(): Promise<void> {\n    try {\n      const result = await loadProfile();\n      setStatus(result);\n    } catch {\n      setStatus(\"recovered\");\n    }\n  }\n  return (\n    <div>\n      <button data-testid=\"async-swallow\" onClick={() => void handleClick()}>Async handler swallows error</button>\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n"
 }

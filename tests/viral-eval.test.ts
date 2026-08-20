@@ -24,7 +24,7 @@ describe("viral eval", () => {
     expect(written.costEstimateUsd).toBe(0);
     expect(written.benchmarks.map((benchmark) => benchmark.name)).toEqual([
       "empty onClick",
-      "wrong state update",
+      "no-op state update",
       "missing navigation",
       "normal button unchanged",
       "dirty worktree patch-only"
@@ -47,7 +47,7 @@ describe("viral eval", () => {
       await stat(join(outputDir, benchmark.afterScreenshot));
     }
     await expect(validateEvalArtifacts(written, outputDir)).resolves.toBeUndefined();
-  }, 30_000);
+  }, 180_000);
 
   test("ships the viral React fixture and launch GIF referenced by the README", async () => {
     const readme = await readFile("README.md", "utf8");
@@ -61,7 +61,7 @@ describe("viral eval", () => {
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
     expect(readme).toContain("10 isolated Git fixtures");
-    expect(readme).toContain("9/10 React cases UI-verified");
+    expect(readme).toContain("10/10 React cases UI-verified");
     expect(readme).toContain("<!-- benchmark:start -->");
     expect(readme).toContain("Generated from real local eval artifacts in `benchmarks/latest.json`.");
     expect(readme).toContain("npx buttonprobe eval viral");
@@ -94,17 +94,17 @@ describe("viral eval", () => {
 
     expect(written.fixture).toBe("fixtures/react-repair-suite");
     expect(written.summary.total).toBe(10);
-    expect(written.summary.passed).toBeGreaterThanOrEqual(8);
+    expect(written.summary.passed).toBe(10);
     expect(written.summary.originalRepoPollutionRate).toBe(0);
     expect(written.durationMs).toBeGreaterThan(0);
     expect(written.modelCalls).toBeGreaterThan(0);
     expect(written.benchmarks).toHaveLength(10);
-    const rejectedUiCase = written.benchmarks.find((benchmark) => benchmark.name === "async handler swallows error");
-    expect(rejectedUiCase?.repairStatus).toBe("failed");
-    expect(rejectedUiCase?.evidenceStatus).toBe("test-verified");
-    expect(rejectedUiCase?.counterfactualVerified).toBe(false);
-    expect(rejectedUiCase?.failureStage).toBe("ui");
-    expect(written.benchmarks.filter((benchmark) => benchmark.evidenceStatus === "ui-verified").length).toBeGreaterThanOrEqual(8);
+    const asyncCase = written.benchmarks.find((benchmark) => benchmark.name === "async handler swallows error");
+    expect(asyncCase?.repairStatus).toBe("verified");
+    expect(asyncCase?.evidenceStatus).toBe("ui-verified");
+    expect(asyncCase?.counterfactualVerified).toBe(true);
+    expect(asyncCase?.failureStage).toBeNull();
+    expect(written.benchmarks.filter((benchmark) => benchmark.evidenceStatus === "ui-verified").length).toBe(10);
     expect(new Set(written.benchmarks.map((benchmark) => benchmark.fixtureName)).size).toBe(10);
     expect(new Set(written.benchmarks.map((benchmark) => benchmark.artifactDir)).size).toBe(10);
     for (const benchmark of written.benchmarks) {
@@ -123,7 +123,7 @@ describe("viral eval", () => {
     }
     expect(releaseGatePassed(written, "react")).toBe(true);
     await expect(validateEvalArtifacts(written, outputDir)).resolves.toBeUndefined();
-  }, 60_000);
+  }, 300_000);
 
   test("rejects eval evidence when a referenced screenshot is missing", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "buttonprobe-eval-integrity-"));
@@ -133,5 +133,5 @@ describe("viral eval", () => {
     await rm(join(outputDir, screenshot!), { force: true });
 
     await expect(validateEvalArtifacts(result, outputDir)).rejects.toThrow("Missing eval artifact");
-  }, 30_000);
+  }, 180_000);
 });

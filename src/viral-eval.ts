@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "./git-workspace.js";
 import { locateSourceCandidates } from "./source-locator.js";
@@ -141,8 +141,8 @@ interface FixtureCase {
   label: string;
   source: string;
   fixedSource: string;
+  sourceFile?: string;
   normal?: boolean;
-  forceUiFailure?: boolean;
   repairStrategy?: "template" | "model";
   scenario?: {
     expect?: ScenarioExpectation[];
@@ -152,6 +152,7 @@ interface FixtureCase {
 
 interface CaseRunOptions {
   slug: string;
+  suiteDir: string;
   outputDir: string;
   fixturePrefix: string;
   dirty?: boolean;
@@ -168,9 +169,11 @@ interface CaseRunResult {
 
 const viralFixture = "fixtures/viral-demo-react" as const;
 const reactFixture = "fixtures/react-repair-suite" as const;
+const vueFixture = "fixtures/vue-repair-suite" as const;
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const suiteRoot = resolve(repoRoot, reactFixture);
-const harnessFiles = ["fixture-server.mjs", "fixture-test.mjs", "fixture-model.mjs"];
+const reactSuiteRoot = resolve(repoRoot, reactFixture);
+const vueSuiteRoot = resolve(repoRoot, vueFixture);
+const modelHarnessFile = "fixture-model.mjs";
 const reactCaseSlugs = [
   "empty-onclick",
   "noop-state",
@@ -183,6 +186,7 @@ const reactCaseSlugs = [
   "async-swallow",
   "normal-button"
 ] as const;
+const vueCaseSlugs = ["empty-click", "wrong-ref", "missing-route", "missing-emit", "normal-button"] as const;
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -266,23 +270,50 @@ async function cloneExternalRepository(repo: string, checkout: string, deadline:
   throw new Error(`Clone failed after 3 attempts: ${lastError}`);
 }
 
-async function prepareCase(slug: string): Promise<{
+const templateInstallPromises = new Map<string, Promise<void>>();
+
+function ensureTemplateDependencies(suiteDir: string): Promise<void> {
+  const templateRoot = join(suiteDir, "template");
+  const cached = templateInstallPromises.get(templateRoot);
+  if (cached) return cached;
+  const promise = (async () => {
+    if (await pathExists(join(templateRoot, "node_modules"))) return;
+    const result = await runCommand("npm", ["install", "--no-audit", "--no-fund", "--no-progress"], {
+      cwd: templateRoot,
+      timeoutMs: 300_000
+    });
+    if (result.code !== 0) {
+      templateInstallPromises.delete(templateRoot);
+      throw new Error(`Template dependency install failed: ${(result.stderr || result.stdout).trim()}`);
+    }
+  })();
+  templateInstallPromises.set(templateRoot, promise);
+  return promise;
+}
+
+async function prepareCase(slug: string, suiteDir: string): Promise<{
   parent: string;
   root: string;
   fixture: FixtureCase;
   originalHash: string;
 }> {
+  await ensureTemplateDependencies(suiteDir);
+  const templateRoot = join(suiteDir, "template");
   const parent = await mkdtemp(join(tmpdir(), `buttonprobe-eval-${slug}-`));
   const root = join(parent, "repo");
   const fixture = JSON.parse(
-    await readFile(join(suiteRoot, "cases", slug, "case.json"), "utf8")
+    await readFile(join(suiteDir, "cases", slug, "case.json"), "utf8")
   ) as FixtureCase;
-  await mkdir(join(root, "src"), { recursive: true });
+  await cp(templateRoot, root, {
+    recursive: true,
+    filter: (source) => basename(source) !== "node_modules"
+  });
+  await symlink(join(templateRoot, "node_modules"), join(root, "node_modules"), "dir");
   await writeFile(join(root, "case.json"), `${JSON.stringify(fixture, null, 2)}\n`);
-  await writeFile(join(root, "src", "App.tsx"), fixture.source);
+  await writeFile(join(root, fixture.sourceFile ?? "src/App.tsx"), fixture.source);
   await writeFile(join(root, "notes.txt"), "clean\n");
-  await writeFile(join(root, ".gitignore"), ".buttonprobe\nnode_modules\n");
-  for (const file of harnessFiles) await cp(join(suiteRoot, file), join(root, file));
+  await writeFile(join(root, ".gitignore"), ".buttonprobe\nnode_modules\ndist\n.vite-cache\n");
+  await cp(join(suiteDir, modelHarnessFile), join(root, modelHarnessFile));
   await runCommand("git", ["init", "-b", "main"], { cwd: root });
   await runCommand("git", ["add", "."], { cwd: root });
   await runCommand(
@@ -351,7 +382,7 @@ function failureStageFor(evidenceStatus: RepairEvidenceStatus, hasCandidate: boo
 }
 
 async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
-  const state = await prepareCase(options.slug);
+  const state = await prepareCase(options.slug, options.suiteDir);
   const artifactSlug = options.dirty ? `${options.slug}-dirty` : options.slug;
   const artifactRoot = join(options.outputDir, "cases", artifactSlug);
   await mkdir(artifactRoot, { recursive: true });
@@ -360,7 +391,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
   const templateOnly = state.fixture.repairStrategy === "template";
   const appPort = await freePort();
   const modelPort = templateOnly ? 0 : await freePort();
-  const app = startProcess(process.execPath, ["fixture-server.mjs"], state.root, { PORT: String(appPort) });
+  const app = startProcess(process.execPath, ["start-dev.mjs"], state.root, { PORT: String(appPort) });
   const model = templateOnly
     ? undefined
     : startProcess(process.execPath, ["fixture-model.mjs"], state.root, { PORT: String(modelPort) });
@@ -378,7 +409,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       ai: !templateOnly,
       fix: true,
       testCommand: "node fixture-test.mjs",
-      devCommand: "node fixture-server.mjs",
+      devCommand: "node start-dev.mjs",
       maxRounds: 1,
       images: false,
       ...(templateOnly ? {} : { apiBaseUrl: `http://127.0.0.1:${modelPort}/v1`, model: "buttonprobe-eval-mock" }),
@@ -437,7 +468,8 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
           join(uiVerificationRoot!, uiEvidence.afterScreenshot)
         )
       : relativeArtifact(options.outputDir, join(artifactRoot, target.evidence.afterScreenshot));
-    const afterSource = await readFile(join(state.root, "src", "App.tsx"));
+    const sourceFile = state.fixture.sourceFile ?? "src/App.tsx";
+    const afterSource = await readFile(join(state.root, sourceFile));
     const originalCheckoutModified = createHash("sha256").update(afterSource).digest("hex") !== state.originalHash;
     const finalStatus = await gitStatus(state.root);
     const residueFiles = [
@@ -457,7 +489,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
       ? target.verdict === "WORKS" && workflow.repairs.length === 0
       : options.dirty
         ? evidenceStatus === "generated" && patchGenerated
-        : !state.fixture.forceUiFailure && evidenceStatus === "ui-verified" && counterfactualVerified;
+        : evidenceStatus === "ui-verified" && counterfactualVerified;
     const outcome = expectedPass && !originalCheckoutModified && residueFiles.length === 0 ? "pass" : "fail";
     const usage = workflow.usageSummary;
     if (templateOnly && (usage?.modelCalls ?? 0) > 0) {
@@ -479,8 +511,8 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
         sourceMapping: {
           candidateCount: sourceCandidates.length,
           ...(sourceCandidate ? { topCandidate: sourceCandidate.path } : {}),
-          expectedSource: "src/App.tsx",
-          top1Correct: sourceCandidate?.path === "src/App.tsx",
+          expectedSource: sourceFile,
+          top1Correct: sourceCandidate?.path === sourceFile,
           score: sourceCandidate?.score ?? null,
           strongIdentity: Boolean(sourceCandidate?.strongIdentity),
           eventChainResolved: Boolean(sourceCandidate?.eventChain)
@@ -508,6 +540,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
 
 async function runCases(
   cases: Array<{ slug: string; dirty?: boolean }>,
+  suiteDir: string,
   outputDir: string,
   fixturePrefix: string,
   options: Pick<ViralEvalOptions, "failFast" | "timeoutMs"> = {}
@@ -517,6 +550,7 @@ async function runCases(
     for (const item of cases) {
       const result = await runCase({
         slug: item.slug,
+        suiteDir,
         outputDir,
         fixturePrefix,
         ...(item.dirty ? { dirty: true } : {}),
@@ -537,6 +571,7 @@ async function runCases(
       if (!item) continue;
       results[index] = await runCase({
         slug: item.slug,
+        suiteDir,
         outputDir,
         fixturePrefix,
         ...(item.dirty ? { dirty: true } : {}),
@@ -578,8 +613,8 @@ function assembleResult(fixture: string, startedAt: number, runs: CaseRunResult[
   };
 }
 
-export function releaseGatePassed(result: ViralEvalResult, suite: "viral" | "react"): boolean {
-  const requiredPasses = suite === "viral" ? 5 : 8;
+export function releaseGatePassed(result: ViralEvalResult, suite: "viral" | "react" | "vue"): boolean {
+  const requiredPasses = suite === "react" ? 8 : 5;
   return result.summary.passed >= requiredPasses &&
     result.summary.originalRepoPollutionRate === 0 &&
     result.summary.failedPatchResidueCount === 0 &&
@@ -623,7 +658,7 @@ export async function runViralEval(options: ViralEvalOptions): Promise<ViralEval
   await mkdir(outputDir, { recursive: true });
   const allCases = [
       { slug: "empty-onclick" },
-      { slug: "wrong-setter" },
+      { slug: "noop-state" },
       { slug: "missing-route" },
       { slug: "normal-button" },
       { slug: "empty-onclick", dirty: true }
@@ -634,6 +669,7 @@ export async function runViralEval(options: ViralEvalOptions): Promise<ViralEval
   if (!selectedCases.length) throw new Error(`Unknown viral eval case: ${options.caseSlug}`);
   const runs = await runCases(
     selectedCases,
+    reactSuiteRoot,
     outputDir,
     viralFixture,
     options
@@ -641,7 +677,7 @@ export async function runViralEval(options: ViralEvalOptions): Promise<ViralEval
   for (const [index, item] of selectedCases.entries()) {
     const run = runs[index];
     if (!run) continue;
-    if (item.slug === "wrong-setter") run.benchmark.name = "wrong state update";
+    if (item.slug === "noop-state") run.benchmark.name = "no-op state update";
     if (item.slug === "missing-route") run.benchmark.name = "missing navigation";
     if (item.slug === "normal-button") run.benchmark.name = "normal button unchanged";
   }
@@ -656,8 +692,20 @@ export async function runReactEval(options: ViralEvalOptions): Promise<ViralEval
     ? reactCaseSlugs.filter((slug) => slug === options.caseSlug).map((slug) => ({ slug }))
     : reactCaseSlugs.map((slug) => ({ slug }));
   if (!selectedCases.length) throw new Error(`Unknown React eval case: ${options.caseSlug}`);
-  const runs = await runCases(selectedCases, outputDir, reactFixture, options);
+  const runs = await runCases(selectedCases, reactSuiteRoot, outputDir, reactFixture, options);
   return writeEvalResult(assembleResult(reactFixture, startedAt, runs), outputDir);
+}
+
+export async function runVueEval(options: ViralEvalOptions): Promise<ViralEvalResult> {
+  const startedAt = Date.now();
+  const outputDir = resolve(options.outputDir);
+  await mkdir(outputDir, { recursive: true });
+  const selectedCases = options.caseSlug
+    ? vueCaseSlugs.filter((slug) => slug === options.caseSlug).map((slug) => ({ slug }))
+    : vueCaseSlugs.map((slug) => ({ slug }));
+  if (!selectedCases.length) throw new Error(`Unknown Vue eval case: ${options.caseSlug}`);
+  const runs = await runCases(selectedCases, vueSuiteRoot, outputDir, vueFixture, options);
+  return writeEvalResult(assembleResult(vueFixture, startedAt, runs), outputDir);
 }
 
 export function parseExternalEvalManifest(value: unknown): { cases: ExternalEvalCase[] } {

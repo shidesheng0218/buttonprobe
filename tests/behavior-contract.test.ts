@@ -137,3 +137,52 @@ test("converts legacy behavior contracts into a single-action scenario", () => {
   expect(scenario.expect).toContainEqual({ type: "visible", selector: "#toast" });
   expect(scenario.forbid).toContainEqual({ type: "consoleError" });
 });
+
+test("consoleClean expectation passes on a quiet console and fails after console.error", async () => {
+  const cleanUrl = await listen(
+    createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end('<button data-testid="save" onclick="document.querySelector(\'#status\').textContent=\'Saved\'">Save</button><p id="status">Idle</p>');
+    })
+  );
+  const clean = await verifyScenarioContract({
+    baseUrl: cleanUrl,
+    scenario: {
+      target: "[data-testid='save']",
+      actions: [{ type: "click", selector: "[data-testid='save']" }],
+      expect: [{ type: "text", value: "Saved" }, { type: "consoleClean" }]
+    },
+    timeoutMs: 30
+  });
+  expect(clean.passed).toBe(true);
+  expect(clean.checks).toContain("scenario console stayed clean after interaction");
+
+  const noisyUrl = await listen(
+    createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end('<button data-testid="save" onclick="console.error(\'swallowed failure\')">Save</button><p id="status">Idle</p>');
+    })
+  );
+  const noisy = await verifyScenarioContract({
+    baseUrl: noisyUrl,
+    scenario: {
+      target: "[data-testid='save']",
+      actions: [{ type: "click", selector: "[data-testid='save']" }],
+      expect: [{ type: "consoleClean" }],
+      forbid: [{ type: "consoleError" }]
+    },
+    timeoutMs: 30
+  });
+  expect(noisy.passed).toBe(false);
+  expect(noisy.failures.some((failure) => failure.includes("expected a clean console"))).toBe(true);
+  expect(noisy.failures.some((failure) => failure.includes("console error observed"))).toBe(true);
+});
+
+test("converts consoleClean expectations from legacy behavior contracts", () => {
+  const scenario = behaviorContractToScenario("save", "[data-testid='save']", "/", {
+    expect: { consoleClean: true },
+    forbid: { consoleError: true }
+  });
+  expect(scenario.expect).toContainEqual({ type: "consoleClean" });
+  expect(scenario.forbid).toContainEqual({ type: "consoleError" });
+});

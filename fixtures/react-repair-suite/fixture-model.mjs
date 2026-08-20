@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const fixture = JSON.parse(readFileSync("case.json", "utf8"));
 const port = Number(process.env.PORT ?? 11435);
 
-function unifiedDiff(before, after) {
+function unifiedDiff(filePath, before, after) {
   const oldLines = before.trimEnd().split("\n");
   const newLines = after.trimEnd().split("\n");
   const lines = [];
@@ -18,7 +18,7 @@ function unifiedDiff(before, after) {
       if (newLine !== undefined) lines.push(`+${newLine}`);
     }
   }
-  return `--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n${lines.join("\n")}\n`;
+  return `--- a/${filePath}\n+++ b/${filePath}\n@@ -1,${oldLines.length} +1,${newLines.length} @@\n${lines.join("\n")}\n`;
 }
 
 createServer(async (request, response) => {
@@ -50,7 +50,7 @@ createServer(async (request, response) => {
           diagnosis: `Repair ${fixture.name}`,
           sourceConfidence: 0.99,
           expectedOutcome: "The target control changes visible UI state.",
-          patch: unifiedDiff(fixture.source, fixture.fixedSource),
+          patch: unifiedDiff(fixture.sourceFile ?? "src/App.tsx", fixture.source, fixture.fixedSource),
           affectedControls: [fixture.testId],
           risk: "low"
         }) } }],

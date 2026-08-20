@@ -3,8 +3,14 @@
   "testId": "missing-route",
   "label": "Missing route navigation",
   "repairStrategy": "template",
-  "scenario": { "expect": [{ "type": "urlIncludes", "value": "/settings" }] },
-  "worksOnclick": "window.history.pushState({}, '', '/settings')",
-  "source": "export function App() {\n  return <button data-testid=\"missing-route\" onClick={() => {}}>Missing route navigation</button>;\n}\n",
-  "fixedSource": "export function App() {\n  return <button data-testid=\"missing-route\" onClick={() => window.history.pushState({}, \"\", \"/settings\")}>Missing route navigation</button>;\n}\n"
+  "scenario": {
+    "expect": [
+      {
+        "type": "urlIncludes",
+        "value": "/settings"
+      }
+    ]
+  },
+  "source": "export function App() {\n  return (\n    <div>\n      <button data-testid=\"missing-route\" onClick={() => {}}>Missing route navigation</button>\n      <span data-testid=\"status\">home</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "export function App() {\n  return (\n    <div>\n      <button data-testid=\"missing-route\" onClick={() => window.history.pushState({}, \"\", \"/settings\")}>Missing route navigation</button>\n      <span data-testid=\"status\">home</span>\n    </div>\n  );\n}\n"
 }

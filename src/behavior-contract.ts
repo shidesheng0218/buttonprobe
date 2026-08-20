@@ -36,7 +36,8 @@ export function behaviorContractToScenario(
       ...(contract.expect?.text ?? []).map((value) => ({ type: "text" as const, value })),
       ...(contract.expect?.visible ?? []).map((visibleSelector) => ({ type: "visible" as const, selector: visibleSelector })),
       ...(contract.expect?.urlIncludes ? [{ type: "urlIncludes" as const, value: contract.expect.urlIncludes }] : []),
-      ...(contract.expect?.network ?? []).map((value) => ({ type: "network" as const, value }))
+      ...(contract.expect?.network ?? []).map((value) => ({ type: "network" as const, value })),
+      ...(contract.expect?.consoleClean ? [{ type: "consoleClean" as const }] : [])
     ],
     forbid: [
       ...(contract.forbid?.text ?? []).map((value) => ({ type: "text" as const, value })),
@@ -105,6 +106,9 @@ export async function verifyScenarioContract(input: ScenarioContractRun): Promis
       } else if (expected.type === "network") {
         if (network.some((entry) => entry.includes(expected.value))) checks.push(`scenario network "${expected.value}" observed`);
         else failures.push(`expected scenario network "${expected.value}" was not observed`);
+      } else if (expected.type === "consoleClean") {
+        if (consoleErrors.length === 0) checks.push("scenario console stayed clean after interaction");
+        else failures.push(`expected a clean console after interaction but observed: ${consoleErrors.join(" | ")}`);
       }
     }
     for (const forbidden of input.scenario.forbid ?? []) {

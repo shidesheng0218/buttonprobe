@@ -139,6 +139,9 @@ function assertBehaviorContracts(value: unknown): Record<string, BehaviorContrac
       const network = groupName === "expect"
         ? assertStringArray(group.network, `behaviorContracts.${controlId}.expect.network`)
         : undefined;
+      const consoleClean = groupName === "expect"
+        ? assertBoolean(group.consoleClean, `behaviorContracts.${controlId}.expect.consoleClean`)
+        : undefined;
       const consoleError = groupName === "forbid"
         ? assertBoolean(group.consoleError, `behaviorContracts.${controlId}.forbid.consoleError`)
         : undefined;
@@ -147,6 +150,7 @@ function assertBehaviorContracts(value: unknown): Record<string, BehaviorContrac
         ...(visible ? { visible } : {}),
         ...(urlIncludes ? { urlIncludes } : {}),
         ...(network ? { network } : {}),
+        ...(consoleClean !== undefined ? { consoleClean } : {}),
         ...(consoleError !== undefined ? { consoleError } : {})
       };
     };
@@ -189,7 +193,8 @@ function assertScenarioExpectation(value: unknown, field: string): NonNullable<S
     if (!selector) throw new Error(`Invalid buttonprobe.config.json field "${field}.selector": expected string`);
     return { type: "visible", selector };
   }
-  throw new Error(`Invalid buttonprobe.config.json field "${field}.type": expected text, visible, urlIncludes, or network`);
+  if (check.type === "consoleClean") return { type: "consoleClean" };
+  throw new Error(`Invalid buttonprobe.config.json field "${field}.type": expected text, visible, urlIncludes, network, or consoleClean`);
 }
 
 function assertScenarioForbid(value: unknown, field: string): NonNullable<ScenarioContract["forbid"]>[number] {
@@ -250,13 +255,17 @@ function assertScenarios(value: unknown): Record<string, ScenarioContract> | und
 }
 
 export async function loadButtonProbeConfig(projectRoot: string): Promise<ButtonProbeConfig> {
-  const path = join(projectRoot, "buttonprobe.config.json");
-  let raw: string;
-  try {
-    raw = await readFile(path, "utf8");
-  } catch {
-    return {};
+  const paths = [join(projectRoot, ".buttonprobe", "config.json"), join(projectRoot, "buttonprobe.config.json")];
+  let raw = "";
+  for (const path of paths) {
+    try {
+      raw = await readFile(path, "utf8");
+      break;
+    } catch {
+      // Fall back to the legacy root config.
+    }
   }
+  if (!raw) return {};
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   return {
     provider: assertProvider(parsed.provider),

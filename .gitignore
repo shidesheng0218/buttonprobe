@@ -3,5 +3,6 @@ dist/
 demo/dist/
 .buttonprobe/
 .buttonprobe-*/
+.vite-cache/
 coverage/
 *.log

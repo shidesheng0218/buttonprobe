@@ -5,6 +5,14 @@ import { describe, expect, test } from "vitest";
 import { loadButtonProbeConfig, mergeWorkflowOptions } from "../src/config.js";
 
 describe("ButtonProbe config", () => {
+  test("loads the .buttonprobe config location emitted by init", async () => {
+    const root = await mkdtemp(join(tmpdir(), "buttonprobe-hidden-config-"));
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(join(root, ".buttonprobe")));
+    await writeFile(join(root, ".buttonprobe", "config.json"), JSON.stringify({ baseUrl: "http://localhost:4173" }));
+
+    await expect(loadButtonProbeConfig(root)).resolves.toMatchObject({ baseUrl: "http://localhost:4173" });
+  });
+
   test("loads buttonprobe.config.json from the project root", async () => {
     const root = await mkdtemp(join(tmpdir(), "buttonprobe-config-"));
     await writeFile(
@@ -22,7 +30,7 @@ describe("ButtonProbe config", () => {
         maxModelCalls: 9,
         behaviorContracts: {
           save: {
-            expect: { text: ["Saved"], visible: ["[data-testid='toast']"] },
+            expect: { text: ["Saved"], visible: ["[data-testid='toast']"], consoleClean: true },
             forbid: { text: ["Error"], consoleError: true }
           }
         }
@@ -44,7 +52,7 @@ describe("ButtonProbe config", () => {
       maxModelCalls: 9,
       behaviorContracts: {
         save: {
-          expect: { text: ["Saved"], visible: ["[data-testid='toast']"] },
+          expect: { text: ["Saved"], visible: ["[data-testid='toast']"], consoleClean: true },
           forbid: { text: ["Error"], consoleError: true }
         }
       }

@@ -47,6 +47,7 @@ export interface BehaviorContractExpectations {
   visible?: string[];
   urlIncludes?: string;
   network?: string[];
+  consoleClean?: boolean;
 }
 
 export interface BehaviorContractForbids {
@@ -69,7 +70,8 @@ export type ScenarioExpectation =
   | { type: "text"; value: string }
   | { type: "visible"; selector: string }
   | { type: "urlIncludes"; value: string }
-  | { type: "network"; value: string };
+  | { type: "network"; value: string }
+  | { type: "consoleClean" };
 
 export type ScenarioForbid =
   | { type: "text"; value: string }

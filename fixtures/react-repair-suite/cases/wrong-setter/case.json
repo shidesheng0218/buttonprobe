@@ -2,6 +2,14 @@
   "name": "wrong setter target",
   "testId": "wrong-setter",
   "label": "Wrong setter target",
-  "source": "import { useState } from \"react\";\nexport function App() {\n  const [target, setTarget] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return <button data-testid=\"wrong-setter\" onClick={() => setDecoy(\"updated\")}>Wrong setter target</button>;\n}\n",
-  "fixedSource": "import { useState } from \"react\";\nexport function App() {\n  const [target, setTarget] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return <button data-testid=\"wrong-setter\" onClick={() => setTarget(\"updated\")}>Wrong setter target</button>;\n}\n"
+  "scenario": {
+    "expect": [
+      {
+        "type": "text",
+        "value": "fixed"
+      }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return (\n    <div>\n      <button data-testid=\"wrong-setter\" onClick={() => setDecoy(\"updated\")}>Wrong setter target</button>\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [status, setStatus] = useState(\"idle\");\n  const [decoy, setDecoy] = useState(\"idle\");\n  return (\n    <div>\n      <button data-testid=\"wrong-setter\" onClick={() => setStatus(\"fixed\")}>Wrong setter target</button>\n      <span data-testid=\"status\">{status}</span>\n    </div>\n  );\n}\n"
 }
