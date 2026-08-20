@@ -3,9 +3,10 @@ import { Command } from "commander";
 import { resolve } from "node:path";
 import { loadButtonProbeConfig, mergeWorkflowOptions } from "./config.js";
 import { runDoctor } from "./doctor.js";
-import { writeInitialConfig } from "./init-config.js";
+import { runDemo } from "./demo.js";
+import { vitePluginSnippet, writeInitialConfig } from "./init-config.js";
 import { runPatchVerification } from "./patch-proof.js";
-import { releaseGatePassed, runExternalEval, runReactEval, runViralEval } from "./viral-eval.js";
+import { releaseGatePassed, runExternalEval, runReactEval, runViralEval, runVueEval } from "./viral-eval.js";
 import { runButtonProbe } from "./workflow.js";
 import type { WorkflowOptions } from "./workflow.js";
 import type { BrowserName } from "./types.js";
@@ -272,7 +273,7 @@ program
   .option("--fail-fast", "stop fixture eval after the first failed case")
   .option("--timeout <milliseconds>", "per-case eval timeout", integer)
   .action(async (suite: string, _flags, command) => {
-    if (suite !== "viral" && suite !== "react" && suite !== "external" && suite !== "smoke") {
+    if (suite !== "viral" && suite !== "react" && suite !== "vue" && suite !== "external" && suite !== "smoke") {
       throw new Error(`Unknown eval suite: ${suite}`);
     }
     const flags = command.optsWithGlobals() as {
@@ -312,7 +313,9 @@ program
       ? await runViralEval(evalOptions)
       : suite === "smoke"
         ? await runViralEval({ ...evalOptions, caseSlug: flags.case ?? "empty-onclick" })
-        : await runReactEval(evalOptions);
+        : suite === "react"
+          ? await runReactEval(evalOptions)
+          : await runVueEval(evalOptions);
     process.stdout.write(
       [
         `ButtonProbe ${suite} eval: ${result.summary.passed}/${result.summary.total} passed.`,
@@ -320,7 +323,22 @@ program
         `Results: ${resolve(output, "eval-results.json")}`
       ].join("\n") + "\n"
     );
-    if (suite !== "smoke" && !releaseGatePassed(result, suite as "viral" | "react")) process.exitCode = 1;
+    if (suite !== "smoke" && !releaseGatePassed(result, suite as "viral" | "react" | "vue")) process.exitCode = 1;
+  });
+
+program
+  .command("demo")
+  .description("run a zero-config scan against the built-in viral fixture")
+  .action(async () => {
+    const result = await runDemo();
+    process.stdout.write(
+      [
+        `ButtonProbe demo found ${result.issues.length} actionable issue(s).`,
+        ...result.issues.map((issue) => `- ${issue.verdict} ${issue.id}: ${issue.label}`),
+        `Report: ${result.reportPath}`,
+        "The temporary demo fixture has been cleaned up."
+      ].join("\n") + "\n"
+    );
   });
 
 program
@@ -345,11 +363,12 @@ program
 
 program
   .command("init")
-  .description("write buttonprobe.config.json without storing API keys")
+  .description("write .buttonprobe/config.json without storing API keys")
   .option("--url <url>", "default localhost URL", "http://localhost:5173")
   .option("--project-root <directory>", "source repository root", process.cwd())
   .option("--test-command <command>", "test command used as the repair gate")
   .option("--provider <provider>", "provider preset: openai, deepseek, ollama, openrouter, or anthropic")
+  .option("--yes", "skip confirmation and write the local config")
   .action(async (_flags, command) => {
     const flags = command.optsWithGlobals() as {
       url: string;
@@ -363,10 +382,18 @@ program
       ...(flags.provider ? { provider: flags.provider } : {}),
       ...(flags.testCommand ? { testCommand: flags.testCommand } : {})
     });
+    const doctor = await runDoctor({
+      projectRoot: resolve(flags.projectRoot),
+      url: flags.url,
+      ...(flags.testCommand ? { testCommand: flags.testCommand } : {})
+    });
     process.stdout.write(
       [
         `Wrote ${path}`,
-        "API keys are not stored. Configure BUTTONPROBE_BASE_URL, BUTTONPROBE_MODEL, and BUTTONPROBE_API_KEY in your shell."
+        "API keys are not stored. Configure BUTTONPROBE_BASE_URL, BUTTONPROBE_MODEL, and BUTTONPROBE_API_KEY in your shell.",
+        "Vite plugin snippet:",
+        vitePluginSnippet(),
+        ...doctor.checks.map((check) => `${check.ok ? "OK" : "FAIL"} ${check.name}: ${check.message}`)
       ].join("\n") + "\n"
     );
   });

@@ -43,6 +43,7 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("fix");
     expect(result.output).toContain("verify");
     expect(result.output).toContain("eval");
+    expect(result.output).toContain("demo");
     expect(result.output).toContain("doctor");
     expect(result.output).toContain("init");
   });
@@ -58,7 +59,7 @@ describe("buttonprobe CLI", () => {
   });
 
   test("fix mode without a model configuration falls back to deterministic templates", async () => {
-    const result = await runCli(["http://localhost:3000", "--fix"], {
+    const result = await runCli(["http://127.0.0.1:9", "--fix"], {
       env: { BUTTONPROBE_BASE_URL: "", BUTTONPROBE_MODEL: "", BUTTONPROBE_API_KEY: "" }
     });
 
@@ -87,17 +88,21 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("BUTTONPROBE_BASE_URL");
   });
 
-  test("init writes config without persisting API keys", async () => {
+  test("init writes a scenario scaffold without persisting API keys", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-init-"));
-    const result = await runCli(["init", "--project-root", cwd, "--url", "http://localhost:5173", "--test-command", "npm test"], {
+    await import("node:fs/promises").then(({ writeFile }) => writeFile(join(cwd, "vite.config.ts"), "export default {};\n"));
+    const result = await runCli(["init", "--project-root", cwd, "--url", "http://localhost:5173", "--test-command", "npm test", "--yes"], {
       env: { BUTTONPROBE_API_KEY: "secret-key" }
     });
 
     expect(result.code).toBe(0);
-    const config = await readFile(join(cwd, "buttonprobe.config.json"), "utf8");
+    const config = await readFile(join(cwd, ".buttonprobe", "config.json"), "utf8");
     expect(config).toContain("http://localhost:5173");
     expect(config).toContain("npm test");
+    expect(config).toContain("scenarios");
     expect(config).not.toContain("secret-key");
+    expect(result.output).toContain("createButtonProbeVitePlugin");
+    expect(result.output).toContain("Deterministic templates");
   });
 
   test("doctor reports missing model configuration with provider examples", async () => {
@@ -111,13 +116,17 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("Ollama");
   });
 
-  test("eval supports viral and react suites", async () => {
+  test("eval supports viral, react, and Vue suites", async () => {
     const result = await runCli(["eval", "react", "--output", ".buttonprobe/eval/react"]);
 
     expect(result.code).toBe(0);
     expect(result.output).toContain("ButtonProbe react eval");
-    expect(result.output).toMatch(/[89]\/10/);
-  }, 30_000);
+    expect(result.output).toMatch(/10\/10/);
+    const vue = await runCli(["eval", "vue", "--output", ".buttonprobe/eval/vue"]);
+    expect(vue.code).toBe(0);
+    expect(vue.output).toContain("ButtonProbe vue eval");
+    expect(vue.output).toContain("5/5");
+  }, 300_000);
 
   test("eval external requires explicit network execution", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-external-eval-"));
@@ -181,7 +190,7 @@ describe("buttonprobe CLI", () => {
     });
 
     expect(result.code).toBe(0);
-    const config = await readFile(join(cwd, "buttonprobe.config.json"), "utf8");
+    const config = await readFile(join(cwd, ".buttonprobe", "config.json"), "utf8");
     expect(config).toContain("https://api.deepseek.com");
     expect(config).toContain("deepseek-chat");
     expect(config).not.toContain("secret-key");
@@ -194,7 +203,7 @@ describe("buttonprobe CLI", () => {
     });
 
     expect(result.code).toBe(0);
-    const config = await readFile(join(cwd, "buttonprobe.config.json"), "utf8");
+    const config = await readFile(join(cwd, ".buttonprobe", "config.json"), "utf8");
     expect(config).toContain('"provider": "anthropic"');
     expect(config).toContain("https://api.anthropic.com");
     expect(config).toContain("claude-sonnet-5");

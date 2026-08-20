@@ -1,6 +1,6 @@
 # Model Provider Setup
 
-ButtonProbe supports OpenAI-compatible `/chat/completions` endpoints and the native Anthropic Claude Messages API. API keys stay in environment variables and are never written to `buttonprobe.config.json`.
+ButtonProbe supports OpenAI-compatible `/chat/completions` endpoints and the native Anthropic Claude Messages API. API keys stay in environment variables and are never written to `.buttonprobe/config.json`.
 
 ## Anthropic Claude
 

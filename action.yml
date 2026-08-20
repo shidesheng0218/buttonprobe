@@ -1,5 +1,8 @@
 name: ButtonProbe UI Proof
 description: Verify a UI repair diff in an isolated worktree before it is merged.
+branding:
+  icon: check-circle
+  color: green
 inputs:
   url:
     required: true

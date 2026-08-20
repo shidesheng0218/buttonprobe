@@ -70,4 +70,6 @@ test("declares a Node 20 composite-free Action surface", async () => {
   expect(action).toContain("main: scripts/action.mjs");
   expect(action).toContain("fail-on-unverified");
   expect(action).toContain("original-checkout-modified");
+  expect(action).toContain("branding:");
+  expect(action).toContain("icon: check-circle");
 });
