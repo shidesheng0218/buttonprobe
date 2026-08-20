@@ -246,6 +246,34 @@ test("traces a Vue click handler through a ref state update", async () => {
   expect(isTrustedSourceCandidate(candidate)).toBe(true);
 });
 
+test("traces a Vue emit handler as an event-chain call", async () => {
+  const root = await mkdtemp(join(tmpdir(), "buttonprobe-vue-emit-source-"));
+  await mkdir(join(root, "src"));
+  await writeFile(
+    join(root, "src", "SaveButton.vue"),
+    [
+      '<script setup lang="ts">',
+      'const emit = defineEmits<["save"]>();',
+      'const save = () => { emit("save"); };',
+      '</script>',
+      '<template><button data-testid="emit-save" @click="save">Emit save</button></template>'
+    ].join("\n")
+  );
+
+  const [candidate] = await locateSourceCandidates(root, {
+    controlId: "emit-save",
+    pageUrl: "http://localhost:5173/profile",
+    label: "Emit save",
+    verdict: "INERT",
+    evidence: { beforeScreenshot: "before.png", afterScreenshot: "after.png", signals: [] }
+  });
+
+  expect(candidate?.path).toBe("src/SaveButton.vue");
+  expect(candidate?.reason).toContain("handler emits");
+  expect(candidate?.eventChain).toMatchObject({ handler: "save", calls: ["emit"] });
+  expect(isTrustedSourceCandidate(candidate)).toBe(true);
+});
+
 test("traces a Svelte click handler through a reactive assignment", async () => {
   const root = await mkdtemp(join(tmpdir(), "buttonprobe-svelte-source-"));
   await mkdir(join(root, "src"));

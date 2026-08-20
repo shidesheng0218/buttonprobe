@@ -1,0 +1,9 @@
+{
+  "name": "Vue missing router navigation",
+  "testId": "missing-route",
+  "label": "Open settings",
+  "sourceFile": "src/App.vue",
+  "scenario": { "expect": [{ "type": "urlIncludes", "value": "/settings" }] },
+  "source": "<script setup lang=\"ts\">\nfunction openSettings() {}\n</script>\n<template>\n  <div>\n    <button data-testid=\"missing-route\" @click=\"openSettings\">Open settings</button>\n    <span>home</span>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nfunction openSettings() { window.history.pushState({}, \"\", \"/settings\"); }\n</script>\n<template>\n  <div>\n    <button data-testid=\"missing-route\" @click=\"openSettings\">Open settings</button>\n    <span>home</span>\n  </div>\n</template>\n"
+}

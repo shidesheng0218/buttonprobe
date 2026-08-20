@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
+import { parse as parseVueSfc } from "@vue/compiler-sfc";
 
 export type SupportedFramework = "react" | "vue" | "svelte" | "next" | "angular" | "unknown";
 
@@ -155,6 +156,14 @@ export function instrumentSource(source: string, filePath: string, projectRoot: 
   const path = relative(projectRoot, filePath).replaceAll("\\", "/");
   const framework = frameworkForPath(path);
   if (!sourceExtensions.has(extname(filePath).toLowerCase())) return { code: source, entries: [] };
+  const vueTemplateRange = (() => {
+    if (framework !== "vue") return undefined;
+    const parsed = parseVueSfc(source, { filename: filePath });
+    const template = parsed.descriptor.template;
+    if (parsed.errors.length > 0 || !template) return null;
+    return { start: template.loc.start.offset, end: template.loc.end.offset };
+  })();
+  if (vueTemplateRange === null) return { code: source, entries: [] };
 
   const entries: SourceManifestEntry[] = [];
   const insertions: Array<{ position: number; text: string }> = [];
@@ -162,6 +171,7 @@ export function instrumentSource(source: string, filePath: string, projectRoot: 
     const tagName = match[1]?.toLowerCase();
     const start = match.index;
     if (!tagName || start === undefined) continue;
+    if (vueTemplateRange && (start < vueTemplateRange.start || start >= vueTemplateRange.end)) continue;
     const tagEnd = findTagEnd(source, start + match[0].length);
     if (tagEnd === undefined) continue;
     const attributes = source.slice(start + match[0].length, tagEnd);

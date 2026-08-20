@@ -137,6 +137,11 @@ function handlerEvidence(
     reasons.push("handler calls router");
     calls.push(routerCall[1] ?? routerCall[2] ?? "router");
   }
+  if (/\bemit\s*\(/.test(searchableBody)) {
+    score += 10;
+    reasons.push("handler emits");
+    calls.push("emit");
+  }
   for (const hookCall of searchableBody.matchAll(/\b(use[A-Z][\w$]*)\s*\(/g)) {
     if (hookCall[1]) {
       score += 4;

@@ -27,6 +27,15 @@ const routerSource = [
   ""
 ].join("\n");
 
+const noopStateSource = [
+  'import { useState } from "react";',
+  "export function App() {",
+  '  const [status, setStatus] = useState("idle");',
+  '  return <button data-testid="noop-state" onClick={() => setStatus(status)}>No-op state update</button>;',
+  "}",
+  ""
+].join("\n");
+
 function makeIssue(controlId: string, label: string): RepairIssue {
   return {
     controlId,
@@ -59,6 +68,12 @@ const routeScenario: ScenarioContract = {
   target: '[data-testid="missing-route"]',
   actions: [{ type: "click", selector: '[data-testid="missing-route"]' }],
   expect: [{ type: "urlIncludes", value: "/settings" }]
+};
+
+const noopScenario: ScenarioContract = {
+  target: '[data-testid="noop-state"]',
+  actions: [{ type: "click", selector: '[data-testid="noop-state"]' }],
+  expect: [{ type: "text", value: "fixed" }]
 };
 
 describe("matchRepairTemplates", () => {
@@ -148,6 +163,33 @@ describe("matchRepairTemplates", () => {
       expect: [{ type: "urlIncludes", value: "settings" }]
     };
     expect(matchRepairTemplates(issue, [makeCandidate(missingRouteSource)], { scenario })).toBeNull();
+  });
+
+  test("repairs only a useState self-assignment with one scenario text expectation", () => {
+    const issue = makeIssue("noop-state", "No-op state update");
+    const match = matchRepairTemplates(issue, [makeCandidate(noopStateSource)], { scenario: noopScenario });
+
+    expect(match?.templateId).toBe("noop-state-update");
+    expect(match?.diff).toContain('onClick={() => setStatus("fixed")}');
+    expect(match?.reason).toContain("self-assigning setStatus(status)");
+  });
+
+  test("rejects noop-looking handlers without a matching useState pair or unique scenario text", () => {
+    const issue = makeIssue("noop-state", "No-op state update");
+    const nonState = noopStateSource.replace('const [status, setStatus] = useState("idle");', "const status = \"idle\";");
+    expect(matchRepairTemplates(issue, [makeCandidate(nonState)], { scenario: noopScenario })).toBeNull();
+    expect(matchRepairTemplates(issue, [makeCandidate(noopStateSource)])).toBeNull();
+    expect(
+      matchRepairTemplates(issue, [makeCandidate(noopStateSource)], {
+        scenario: { ...noopScenario, expect: [{ type: "text", value: "one" }, { type: "text", value: "two" }] }
+      })
+    ).toBeNull();
+  });
+
+  test("does not rewrite a setter that receives a different expression", () => {
+    const issue = makeIssue("noop-state", "No-op state update");
+    const functionalUpdate = noopStateSource.replace("setStatus(status)", "setStatus(status + \"!\")");
+    expect(matchRepairTemplates(issue, [makeCandidate(functionalUpdate)], { scenario: noopScenario })).toBeNull();
   });
 
   test("ignores non-JSX files", () => {

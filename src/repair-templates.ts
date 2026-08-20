@@ -1,7 +1,7 @@
 import { extname } from "node:path";
 import type { RepairAttempt, RepairIssue, ScenarioContract, SourceCandidate } from "./types.js";
 
-export type RepairTemplateId = "empty-onclick-setter" | "missing-route-navigation";
+export type RepairTemplateId = "empty-onclick-setter" | "missing-route-navigation" | "noop-state-update";
 
 export interface RepairTemplateMatch {
   templateId: RepairTemplateId;
@@ -25,7 +25,9 @@ export const repairTemplateDescriptions: Record<RepairTemplateId, string> = {
   "empty-onclick-setter":
     "Wires an empty onClick handler to the component's unique useState setter using the scenario's single text expectation as the new state value.",
   "missing-route-navigation":
-    "Wires an empty onClick handler to a navigation call derived from the scenario's urlIncludes expectation."
+    "Wires an empty onClick handler to a navigation call derived from the scenario's urlIncludes expectation.",
+  "noop-state-update":
+    "Replaces a self-assigning onClick setter call (setX(x) where x is the same useState state identifier) with the scenario's single text expectation as the new state value."
 };
 
 function escapeRegExp(value: string): string {
@@ -80,11 +82,18 @@ function findControlTag(content: string, issue: RepairIssue): ControlTag | undef
 }
 
 const EMPTY_ONCLICK_PATTERN = /onClick\s*=\s*\{\s*\(\s*\)\s*=>\s*\{\s*\}\s*\}/;
+const NOOP_STATE_PATTERN = /onClick\s*=\s*\{\s*\(\s*\)\s*=>\s*(set[A-Z][\w$]*)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*\}/;
 
 function useStateSetters(content: string): string[] {
   return [...content.matchAll(/(?:const|let)\s+\[[^\]]+,\s*(set[A-Z][\w$]*)\]\s*=\s*(?:React\.)?useState\s*[<(]/g)]
     .map((match) => match[1])
     .filter((setter): setter is string => Boolean(setter));
+}
+
+function useStatePairs(content: string): Array<{ state: string; setter: string }> {
+  return [...content.matchAll(/(?:const|let)\s+\[\s*([A-Za-z_$][\w$]*)\s*,\s*(set[A-Z][\w$]*)\s*\]\s*=\s*(?:React\.)?useState\s*[<(]/g)]
+    .map((match) => ({ state: match[1] ?? "", setter: match[2] ?? "" }))
+    .filter((pair) => pair.state && pair.setter);
 }
 
 function usesReactRouterNavigate(content: string): boolean {
@@ -151,51 +160,78 @@ export function matchRepairTemplates(
   const tag = findControlTag(content, issue);
   if (!tag) return null;
   const attributes = content.slice(tag.tagStart, tag.tagEnd + 1);
-  const emptyOnClick = EMPTY_ONCLICK_PATTERN.exec(attributes);
-  if (!emptyOnClick || emptyOnClick.index === undefined) return null;
-  const matchStart = tag.tagStart + emptyOnClick.index;
-  const matchEnd = matchStart + emptyOnClick[0].length;
-
   const expectations = context.scenario?.expect ?? [];
   const routeExpectation = expectations.find((expectation) => expectation.type === "urlIncludes");
   const textExpectations = expectations.filter((expectation) => expectation.type === "text");
 
-  if (routeExpectation && routeExpectation.type === "urlIncludes") {
-    const path = routeExpectation.value;
-    if (!path.startsWith("/")) return null;
-    const expression = usesReactRouterNavigate(content)
-      ? `navigate(${JSON.stringify(path)})`
-      : `window.history.pushState({}, "", ${JSON.stringify(path)})`;
-    const diff = singleLineReplacementDiff(candidate.path, content, matchStart, {
-      start: matchStart,
-      end: matchEnd,
-      text: `onClick={() => ${expression}}`
-    });
-    if (!diff) return null;
-    return {
-      templateId: "missing-route-navigation",
-      path: candidate.path,
-      diff,
-      reason: `empty onClick replaced with ${expression} using scenario urlIncludes evidence "${path}"`
-    };
+  const emptyOnClick = EMPTY_ONCLICK_PATTERN.exec(attributes);
+  if (emptyOnClick && emptyOnClick.index !== undefined) {
+    const matchStart = tag.tagStart + emptyOnClick.index;
+    const matchEnd = matchStart + emptyOnClick[0].length;
+
+    if (routeExpectation && routeExpectation.type === "urlIncludes") {
+      const path = routeExpectation.value;
+      if (!path.startsWith("/")) return null;
+      const expression = usesReactRouterNavigate(content)
+        ? `navigate(${JSON.stringify(path)})`
+        : `window.history.pushState({}, "", ${JSON.stringify(path)})`;
+      const diff = singleLineReplacementDiff(candidate.path, content, matchStart, {
+        start: matchStart,
+        end: matchEnd,
+        text: `onClick={() => ${expression}}`
+      });
+      if (!diff) return null;
+      return {
+        templateId: "missing-route-navigation",
+        path: candidate.path,
+        diff,
+        reason: `empty onClick replaced with ${expression} using scenario urlIncludes evidence "${path}"`
+      };
+    }
+
+    if (textExpectations.length === 1 && textExpectations[0]?.type === "text") {
+      const setters = useStateSetters(content);
+      if (setters.length !== 1 || !setters[0]) return null;
+      const value = textExpectations[0].value;
+      const expression = `${setters[0]}(${JSON.stringify(value)})`;
+      const diff = singleLineReplacementDiff(candidate.path, content, matchStart, {
+        start: matchStart,
+        end: matchEnd,
+        text: `onClick={() => ${expression}}`
+      });
+      if (!diff) return null;
+      return {
+        templateId: "empty-onclick-setter",
+        path: candidate.path,
+        diff,
+        reason: `empty onClick wired to unique useState setter ${setters[0]} using scenario text expectation "${value}"`
+      };
+    }
+
+    return null;
   }
 
-  if (textExpectations.length === 1 && textExpectations[0]?.type === "text") {
-    const setters = useStateSetters(content);
-    if (setters.length !== 1 || !setters[0]) return null;
+  const noopState = NOOP_STATE_PATTERN.exec(attributes);
+  if (noopState && noopState.index !== undefined) {
+    const setter = noopState[1] ?? "";
+    const argument = noopState[2] ?? "";
+    const statePair = useStatePairs(content).find((pair) => pair.setter === setter);
+    if (!statePair || statePair.state !== argument) return null;
+    if (textExpectations.length !== 1 || textExpectations[0]?.type !== "text") return null;
     const value = textExpectations[0].value;
-    const expression = `${setters[0]}(${JSON.stringify(value)})`;
+    const matchStart = tag.tagStart + noopState.index;
+    const matchEnd = matchStart + noopState[0].length;
     const diff = singleLineReplacementDiff(candidate.path, content, matchStart, {
       start: matchStart,
       end: matchEnd,
-      text: `onClick={() => ${expression}}`
+      text: `onClick={() => ${setter}(${JSON.stringify(value)})}`
     });
     if (!diff) return null;
     return {
-      templateId: "empty-onclick-setter",
+      templateId: "noop-state-update",
       path: candidate.path,
       diff,
-      reason: `empty onClick wired to unique useState setter ${setters[0]} using scenario text expectation "${value}"`
+      reason: `self-assigning ${setter}(${argument}) replaced with ${setter}(${JSON.stringify(value)}) using scenario text expectation "${value}"`
     };
   }
 

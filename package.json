@@ -47,13 +47,16 @@
     "docs/launch/reddit-post.md",
     "docs/launch/release-v0.1.0-alpha.1.md",
     "docs/launch/release-v0.1.0-alpha.2.md",
+    "docs/launch/action-marketplace.md",
     "docs/launch/x-thread.md",
+    "docs/recipes",
     "action.yml",
     "benchmarks",
     "scripts",
     "examples",
     "fixtures/viral-demo-react",
     "fixtures/react-repair-suite",
+    "fixtures/vue-repair-suite",
     "fixtures/external-react",
     "README.md",
     "ROADMAP.md",
@@ -75,6 +78,7 @@
     "record:proof-demo": "node scripts/record-action-proof-demo.mjs",
     "eval:viral": "tsx src/cli.ts eval viral --output .buttonprobe/eval/viral",
     "eval:react": "tsx src/cli.ts eval react --output .buttonprobe/eval/react",
+    "eval:vue": "tsx src/cli.ts eval vue --output .buttonprobe/eval/vue",
     "eval:external": "tsx src/cli.ts eval external --manifest fixtures/external-react/manifest.json --allow-network --output .buttonprobe/eval/external"
   },
   "engines": {
@@ -82,6 +86,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/compiler-sfc": "^3.5.41",
     "commander": "^15.0.0",
     "playwright": "^1.62.0",
     "zod": "^4.4.3"

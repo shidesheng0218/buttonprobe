@@ -1,0 +1,9 @@
+{
+  "name": "Vue normal button regression guard",
+  "testId": "normal-button",
+  "label": "Normal Vue button",
+  "sourceFile": "src/App.vue",
+  "normal": true,
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst status = ref(\"ready\");\nfunction save() { status.value = \"works\"; }\n</script>\n<template>\n  <div>\n    <button data-testid=\"normal-button\" @click=\"save\">Normal Vue button</button>\n    <span data-testid=\"status\">{{ status }}</span>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst status = ref(\"ready\");\nfunction save() { status.value = \"works\"; }\n</script>\n<template>\n  <div>\n    <button data-testid=\"normal-button\" @click=\"save\">Normal Vue button</button>\n    <span data-testid=\"status\">{{ status }}</span>\n  </div>\n</template>\n"
+}

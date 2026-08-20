@@ -28,7 +28,7 @@ test("writes a local manifest for Vue and Svelte controls", async () => {
   const root = await mkdtemp(join(tmpdir(), "buttonprobe-adapter-"));
   const plugin = createButtonProbeVitePlugin({ root, manifestPath: ".buttonprobe/source-manifest.json" });
   await plugin.configResolved?.({ root });
-  await plugin.transform?.('<button aria-label="Save">Save</button>', join(root, "src", "Save.vue"));
+  await plugin.transform?.('<template><button aria-label="Save">Save</button></template>', join(root, "src", "Save.vue"));
   await plugin.transform?.('<button>Cancel</button>', join(root, "src", "Cancel.svelte"));
   await plugin.buildEnd?.();
 

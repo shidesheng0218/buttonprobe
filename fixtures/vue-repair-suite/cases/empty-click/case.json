@@ -1,0 +1,9 @@
+{
+  "name": "Vue empty click handler",
+  "testId": "empty-click",
+  "label": "Empty click",
+  "sourceFile": "src/App.vue",
+  "scenario": { "expect": [{ "type": "text", "value": "fixed" }] },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst status = ref(\"idle\");\nfunction save() {}\n</script>\n<template>\n  <div>\n    <button data-testid=\"empty-click\" @click=\"save\">Empty click</button>\n    <span data-testid=\"status\">{{ status }}</span>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst status = ref(\"idle\");\nfunction save() { status.value = \"fixed\"; }\n</script>\n<template>\n  <div>\n    <button data-testid=\"empty-click\" @click=\"save\">Empty click</button>\n    <span data-testid=\"status\">{{ status }}</span>\n  </div>\n</template>\n"
+}
