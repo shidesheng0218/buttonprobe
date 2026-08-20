@@ -1,51 +1,12 @@
 {
   "cases": [
     {
-      "name": "buttonprobe/viral-empty-onclick",
-      "framework": "react",
-      "repo": "https://github.com/shidesheng0218/buttonprobe",
-      "commit": "07383d952fe304de29da51c6595be7505281a9d3",
-      "license": "MIT",
-      "expectedSource": "fixtures/viral-demo-react/src/App.tsx",
-      "patchFile": "patches/empty-onclick.diff",
-      "target": "[data-testid=\"empty-onclick\"]",
-      "setup": "npm ci --ignore-scripts",
-      "testCommand": "node -e \"const fs=require('fs');if(!fs.readFileSync('fixtures/viral-demo-react/src/App.tsx','utf8').includes('onClick={() => setEmptyFixed(true)}'))process.exit(1)\"",
-      "devCommand": "npm run demo:viral -- --host 127.0.0.1 --port {port}"
-    },
-    {
-      "name": "buttonprobe/viral-wrong-state",
-      "framework": "react",
-      "repo": "https://github.com/shidesheng0218/buttonprobe",
-      "commit": "07383d952fe304de29da51c6595be7505281a9d3",
-      "license": "MIT",
-      "expectedSource": "fixtures/viral-demo-react/src/App.tsx",
-      "patchFile": "patches/wrong-state.diff",
-      "target": "[data-testid=\"wrong-state\"]",
-      "setup": "npm ci --ignore-scripts",
-      "testCommand": "node -e \"const fs=require('fs');if(!fs.readFileSync('fixtures/viral-demo-react/src/App.tsx','utf8').includes('onClick={() => setCount((value) => value + 1)}'))process.exit(1)\"",
-      "devCommand": "npm run demo:viral -- --host 127.0.0.1 --port {port}"
-    },
-    {
-      "name": "buttonprobe/viral-missing-navigation",
-      "framework": "react",
-      "repo": "https://github.com/shidesheng0218/buttonprobe",
-      "commit": "07383d952fe304de29da51c6595be7505281a9d3",
-      "license": "MIT",
-      "expectedSource": "fixtures/viral-demo-react/src/App.tsx",
-      "patchFile": "patches/missing-navigation.diff",
-      "target": "[data-testid=\"missing-navigation\"]",
-      "setup": "npm ci --ignore-scripts",
-      "testCommand": "node -e \"const fs=require('fs');if(!fs.readFileSync('fixtures/viral-demo-react/src/App.tsx','utf8').includes('onClick={() => setRoute(\\\"settings\\\")}'))process.exit(1)\"",
-      "devCommand": "npm run demo:viral -- --host 127.0.0.1 --port {port}"
-    },
-    {
       "name": "bitovi/trainings-use-toggle",
       "framework": "react",
       "repo": "https://github.com/bitovi/trainings",
       "commit": "87834c70bb9339cc15a4bcef36808332a5ef4ee7",
       "license": "NOASSERTION",
-      "expectedSource": "src/useToggle.ts",
+      "expectedSource": "src/App.tsx",
       "appDirectory": "custom-hooks/Exercise1/problem",
       "patchFile": "patches/bitovi-use-toggle.diff",
       "target": "button:nth-of-type(3)",

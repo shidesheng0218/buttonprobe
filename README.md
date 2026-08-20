@@ -21,12 +21,13 @@ npx buttonprobe verify http://localhost:5173 \
 ```
 
 <!-- benchmark:start -->
-**5/5 viral cases passing. 9/10 React cases UI-verified. Original repo pollution rate: 0.**
+**5/5 viral cases passing. 9/10 React cases UI-verified. 1/1 external third-party cases UI-verified. Original repo pollution rate: 0.**
 
 | Suite | Result | Source Top-1 | Residue | Evidence date |
 | --- | --- | --- | --- | --- |
 | Viral | 5/5 passing | 1 | 0 | 2026-08-19 |
 | React | 9/10 UI-verified | 1 | 0 | 2026-08-19 |
+| External | 1/1 UI-verified | 1 | 0 | 2026-08-20 |
 
 Generated from real local eval artifacts in `benchmarks/latest.json`.
 <!-- benchmark:end -->

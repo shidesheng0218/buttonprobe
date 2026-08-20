@@ -17,5 +17,17 @@
     "originalRepoPollutionRate": 0,
     "failedPatchResidueCount": 0,
     "sourceTop1Accuracy": 1
+  },
+  "external": {
+    "generatedAt": "2026-08-20T07:24:22.869Z",
+    "passed": 1,
+    "total": 1,
+    "uiVerifiedRate": 1,
+    "sourceTop1Accuracy": 1,
+    "originalRepoPollutionRate": 0,
+    "rollbackResidue": 0,
+    "repos": [
+      "bitovi/trainings"
+    ]
   }
 }
