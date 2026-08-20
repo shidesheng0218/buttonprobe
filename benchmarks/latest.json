@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "viral": {
-    "generatedAt": "2026-08-19T03:39:16.488Z",
+    "generatedAt": "2026-08-20T10:34:47.810Z",
     "passed": 5,
     "total": 5,
     "uiVerified": 4,
@@ -10,16 +10,25 @@
     "sourceTop1Accuracy": 1
   },
   "react": {
-    "generatedAt": "2026-08-19T03:39:36.896Z",
-    "passed": 9,
+    "generatedAt": "2026-08-20T10:35:20.177Z",
+    "passed": 10,
     "total": 10,
-    "uiVerified": 9,
+    "uiVerified": 10,
+    "originalRepoPollutionRate": 0,
+    "failedPatchResidueCount": 0,
+    "sourceTop1Accuracy": 1
+  },
+  "vue": {
+    "generatedAt": "2026-08-20T10:35:36.830Z",
+    "passed": 5,
+    "total": 5,
+    "uiVerified": 5,
     "originalRepoPollutionRate": 0,
     "failedPatchResidueCount": 0,
     "sourceTop1Accuracy": 1
   },
   "external": {
-    "generatedAt": "2026-08-20T07:24:22.869Z",
+    "generatedAt": "2026-08-20T10:38:48.462Z",
     "passed": 1,
     "total": 1,
     "uiVerifiedRate": 1,

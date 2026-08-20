@@ -21,12 +21,13 @@ npx buttonprobe verify http://localhost:5173 \
 ```
 
 <!-- benchmark:start -->
-**5/5 viral cases passing. 9/10 React cases UI-verified. 1/1 external third-party cases UI-verified. Original repo pollution rate: 0.**
+**5/5 viral cases passing. 10/10 React cases UI-verified. 5/5 Vue cases UI-verified. 1/1 external third-party cases UI-verified. Original repo pollution rate: 0.**
 
 | Suite | Result | Source Top-1 | Residue | Evidence date |
 | --- | --- | --- | --- | --- |
-| Viral | 5/5 passing | 1 | 0 | 2026-08-19 |
-| React | 9/10 UI-verified | 1 | 0 | 2026-08-19 |
+| Viral | 5/5 passing | 1 | 0 | 2026-08-20 |
+| React | 10/10 UI-verified | 1 | 0 | 2026-08-20 |
+| Vue | 5/5 UI-verified | 1 | 0 | 2026-08-20 |
 | External | 1/1 UI-verified | 1 | 0 | 2026-08-20 |
 
 Generated from real local eval artifacts in `benchmarks/latest.json`.
@@ -72,11 +73,17 @@ flowchart LR
 - **Verifies other agents:** `verify --patch` checks diffs from Claude, Codex, Cursor, or a human reviewer with **0 model calls**.
 - **MCP server for agents:** `buttonprobe mcp` exposes scan / verify / doctor tools to Claude Code, Cursor, and Codex so any agent can prove its UI patch before merge.
 - **Proof-carrying output:** `verified.diff`, `proof.json`, before/after screenshots, test logs, source candidates, and `report.html`.
-- **Narrow on purpose:** React/Vite dead-button repair first; broader scanning still works for local web apps.
+- **Narrow on purpose:** React/Vite and Vue/Vite repair fixtures are proof-backed; broader scanning still works for local web apps.
 
 ## 10 Second Demo
 
-Run the zero-cost public eval. Two repairs come from built-in deterministic templates with zero model calls; the rest use the packaged mock OpenAI-compatible endpoint. You do not need an API key.
+Run a zero-configuration scan against the built-in fixture, or run the zero-cost public eval. Three repairs come from built-in deterministic templates with zero model calls; the rest use the packaged mock OpenAI-compatible endpoint. You do not need an API key.
+
+```bash
+npx buttonprobe demo
+```
+
+Or run the reproducible eval:
 
 ```bash
 npx playwright install chromium
@@ -92,11 +99,12 @@ Original repo pollution rate: 0
 
 ## What It Can Fix Today
 
-ButtonProbe’s automatic repair loop currently targets local React JavaScript/TypeScript apps with broken click handlers and inert controls.
+ButtonProbe’s proof-backed automatic repair fixtures target local React and Vue JavaScript/TypeScript apps with broken click handlers and inert controls. This is evidence of supported framework adapters, not a claim that every production application pattern is already covered.
 
 | Case | Evidence |
 | --- | --- |
 | empty `onClick` | UI-verified, deterministic template, 0 model calls |
+| noop state update | UI-verified, deterministic template, 0 model calls |
 | wrong state update | UI-verified |
 | missing route navigation | UI-verified, deterministic template, 0 model calls |
 | stale closure state update | UI-verified |
@@ -111,9 +119,10 @@ Run the benchmarks:
 ```bash
 npx buttonprobe eval viral
 npx buttonprobe eval react
+npx buttonprobe eval vue
 ```
 
-The React suite runs 10 isolated Git fixtures. Nine repairs reach `ui-verified` (two of them with zero model calls), one intentionally fails UI verification, and one working control is preserved. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
+The React suite runs 10 isolated Git fixtures, each rendered by a real Vite + React 18 app instead of a canned server. Every repair must pass a real `vite build` in an isolated worktree plus browser-level UI verification before a verified diff is issued, and the working-control case must stay unchanged. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
 
 ## Zero-Model Deterministic Repair
 
@@ -123,6 +132,7 @@ Some dead-button patterns are unambiguous, so ButtonProbe repairs them without c
 | --- | --- | --- |
 | `empty-onclick-setter` | empty `onClick`, strong identity, resolved event chain, exactly one `useState` setter, and a scenario with exactly one `text` expectation | `onClick={() => setX("<expected text>")}` |
 | `missing-route-navigation` | empty `onClick`, strong identity, resolved event chain, and a scenario `urlIncludes` expectation with an absolute path | `onClick={() => navigate("<path>")}` when the file already uses `useNavigate`, otherwise `onClick={() => window.history.pushState({}, "", "<path>")}` |
+| `noop-state-update` | `onClick={() => setX(x)}` where `x` and `setX` are the same `useState` pair, plus strong identity, resolved event chain, and exactly one scenario `text` expectation | `onClick={() => setX("<expected text>")}` |
 
 Rules are deliberately strict:
 
@@ -170,6 +180,8 @@ args = ["buttonprobe", "mcp"]
 
 Let your agent write the patch, then ask it to call `buttonprobe_verify` before merge. The tool returns the proof status plus absolute paths to `proof.json`, `report.html`, and `verified.diff`, and it never applies a patch unless you pass `apply: true` and the patch reached `ui-verified`.
 
+End-to-end MCP recipes: [Claude Code](docs/recipes/claude-code.md), [Cursor](docs/recipes/cursor.md), and [Codex](docs/recipes/codex.md).
+
 ## GitHub Action
 
 Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contributor has proposed a UI diff. The Action runs `verify` only: it never calls a model and never applies a patch to the runner checkout.
@@ -186,6 +198,8 @@ Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contr
 ```
 
 It exposes `status`, `proof-path`, `report-path`, `verified-diff-path`, `model-calls`, and `original-checkout-modified`. Upload the proof directory with `actions/upload-artifact`; a complete workflow is in [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml).
+
+The repository maintainer checklist for publishing the Action is in [docs/launch/action-marketplace.md](docs/launch/action-marketplace.md).
 
 ## Verify Any Patch
 
@@ -308,7 +322,8 @@ Use scenario contracts when a DOM change is not enough proof. Scenarios are dete
       "expect": [
         { "type": "text", "value": "Saved" },
         { "type": "visible", "selector": "[data-testid='save-toast']" },
-        { "type": "urlIncludes", "value": "/profile" }
+        { "type": "urlIncludes", "value": "/profile" },
+        { "type": "consoleClean" }
       ],
       "forbid": [
         { "type": "text", "value": "Error" },
@@ -335,20 +350,22 @@ export default defineConfig({
 });
 ```
 
-ButtonProbe writes `.buttonprobe/source-manifest.json` and maps controls back to source files. Without instrumentation, it falls back to JSX-aware matching with `data-testid`, visible text, ARIA labels, handlers, state setters, router calls, callback props, custom hooks, and import context. Low-confidence locations stay patch-only.
+ButtonProbe writes `.buttonprobe/source-manifest.json` and maps controls back to React JSX or Vue SFC source files. Without instrumentation, it falls back to framework-aware matching with `data-testid`, visible text, ARIA labels, handlers, state updates, router calls, callback or emit chains, custom hooks/composables, and import context. Low-confidence locations stay patch-only.
 
 ## CLI
 
 ```bash
 npx buttonprobe scan http://localhost:5173
+npx buttonprobe demo
 npx buttonprobe analyze http://localhost:5173
 npx buttonprobe fix http://localhost:5173 --test-command "npm test"
 npx buttonprobe verify http://localhost:5173 --patch agent.diff --test-command "npm test" --dev-command "npm run dev -- --port {port}"
 npx buttonprobe verify http://localhost:5173 --patch-url "https://github.com/owner/repo/pull/123.diff" --target "[data-testid='save']" --test-command "npm test" --dev-command "npm run dev -- --port {port}"
 npx buttonprobe eval viral
 npx buttonprobe eval react
+npx buttonprobe eval vue
 npx buttonprobe doctor http://localhost:5173 --test-command "npm test"
-npx buttonprobe init --url http://localhost:5173 --test-command "npm test"
+npx buttonprobe init --url http://localhost:5173 --test-command "npm test" --yes
 npx buttonprobe mcp
 ```
 
@@ -377,7 +394,8 @@ The report includes verdicts, AI assessments, source candidates, repair timeline
 Supported well today:
 
 - Localhost development apps
-- React JavaScript/TypeScript automatic repair
+- React/Vite JavaScript/TypeScript automatic repair with real eval evidence
+- Vue/Vite JavaScript/TypeScript automatic repair with real eval evidence
 - Vite-first workflows
 - Dead buttons, inert controls, broken click handlers
 - BYOK model repair
@@ -390,7 +408,7 @@ Deferred:
 - Backend business logic
 - Database changes
 - Payment, deletion, permission, and destructive flows
-- Vue/Svelte/Next.js automatic repair until each framework has public UI-verified eval evidence
+- Svelte/Next.js automatic repair until each framework has public UI-verified eval evidence
 
 ## Launch Story
 
