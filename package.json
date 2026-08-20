@@ -89,7 +89,7 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/compiler-sfc": "^3.5.41",
     "commander": "^15.0.0",
-    "playwright": "^1.62.0",
+    "playwright": "^1.62.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
