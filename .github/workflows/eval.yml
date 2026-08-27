@@ -20,4 +20,5 @@ jobs:
       - run: npm run build
       - run: npm run eval:viral
       - run: npm run eval:react
+      - run: npm run eval:vue
       - run: npm run test:packed

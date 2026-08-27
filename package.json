@@ -67,7 +67,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
-    "test:ci": "vitest run --exclude tests/cli.test.ts --exclude tests/patch-proof.test.ts --exclude tests/viral-eval.test.ts --exclude tests/workflow.e2e.test.ts --exclude tests/worktree-repair.test.ts --exclude tests/mcp-verify.e2e.test.ts",
+    "test:ci": "vitest run --exclude tests/cli.test.ts --exclude tests/patch-proof.test.ts --exclude tests/viral-eval.test.ts --exclude tests/vue-eval.test.ts --exclude tests/workflow.e2e.test.ts --exclude tests/worktree-repair.test.ts --exclude tests/mcp-verify.e2e.test.ts",
     "test:packed": "node scripts/test-packed.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -92,6 +92,9 @@
     "commander": "^15.0.0",
     "playwright": "^1.62.0",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "nanoid": "3.3.18"
   },
   "devDependencies": {
     "@types/node": "^22.19.8",
