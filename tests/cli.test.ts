@@ -43,6 +43,7 @@ describe("buttonprobe CLI", () => {
     expect(result.output).toContain("fix");
     expect(result.output).toContain("verify");
     expect(result.output).toContain("eval");
+    expect(result.output).toContain("scenario");
     expect(result.output).toContain("demo");
     expect(result.output).toContain("doctor");
     expect(result.output).toContain("init");
@@ -127,6 +128,14 @@ describe("buttonprobe CLI", () => {
     expect(vue.output).toContain("ButtonProbe vue eval");
     expect(vue.output).toContain("5/5");
   }, 300_000);
+
+  test("eval help documents mutation benchmark inputs", async () => {
+    const result = await runCli(["eval", "--help"]);
+    expect(result.code).toBe(0);
+    expect(result.output).toContain("--fixture");
+    expect(result.output).toContain("--mutation");
+    expect(result.output).toContain("--expect-text");
+  });
 
   test("eval external requires explicit network execution", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "buttonprobe-external-eval-"));

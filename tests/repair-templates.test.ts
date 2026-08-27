@@ -36,6 +36,16 @@ const noopStateSource = [
   ""
 ].join("\n");
 
+const vueEmptySource = [
+  '<script setup lang="ts">',
+  'import { ref } from "vue";',
+  'const status = ref("idle");',
+  'function save() {}',
+  '</script>',
+  '<template><button data-testid="empty-onclick" @click="save">Empty onClick</button><span>{{ status }}</span></template>',
+  ''
+].join("\n");
+
 function makeIssue(controlId: string, label: string): RepairIssue {
   return {
     controlId,
@@ -199,6 +209,18 @@ describe("matchRepairTemplates", () => {
         scenario: setterScenario
       })
     ).toBeNull();
+  });
+
+  test("repairs an empty Vue handler with the unique ref and scenario text", () => {
+    const issue = makeIssue("empty-onclick", "Empty onClick");
+    const match = matchRepairTemplates(
+      issue,
+      [makeCandidate(vueEmptySource, { path: "src/App.vue" })],
+      { scenario: setterScenario }
+    );
+
+    expect(match?.templateId).toBe("empty-onclick-setter");
+    expect(match?.diff).toContain('function save() { status.value = "fixed"; }');
   });
 });
 

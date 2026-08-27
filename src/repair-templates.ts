@@ -96,6 +96,26 @@ function useStatePairs(content: string): Array<{ state: string; setter: string }
     .filter((pair) => pair.state && pair.setter);
 }
 
+function vueRefNames(content: string): string[] {
+  return [...content.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*ref\s*\(/g)]
+    .map((match) => match[1])
+    .filter((name): name is string => Boolean(name));
+}
+
+function vueClickHandler(attributes: string): string | undefined {
+  const match = attributes.match(/(?:@click|v-on:click)\s*=\s*["']\s*([A-Za-z_$][\w$]*)\s*["']/);
+  return match?.[1];
+}
+
+function vueFunctionBody(content: string, name: string): { start: number; end: number; body: string } | undefined {
+  const declaration = new RegExp(`function\\s+${escapeRegExp(name)}\\s*\\([^)]*\\)\\s*\\{`, "m").exec(content);
+  if (!declaration || declaration.index === undefined) return undefined;
+  const bodyStart = declaration.index + declaration[0].length;
+  const bodyEnd = content.indexOf("}", bodyStart);
+  if (bodyEnd === -1) return undefined;
+  return { start: bodyStart, end: bodyEnd, body: content.slice(bodyStart, bodyEnd) };
+}
+
 function usesReactRouterNavigate(content: string): boolean {
   return (
     /import\s+[^\n;]*from\s+["']react-router/.test(content) &&
@@ -155,7 +175,7 @@ export function matchRepairTemplates(
   if ((candidate.score ?? 0) < TEMPLATE_AUTO_VERIFY_SCORE) return null;
   if (!candidate.eventChain) return null;
   const extension = extname(candidate.path).toLowerCase();
-  if (extension !== ".tsx" && extension !== ".jsx") return null;
+  if (extension !== ".tsx" && extension !== ".jsx" && extension !== ".vue") return null;
   const content = candidate.content;
   const tag = findControlTag(content, issue);
   if (!tag) return null;
@@ -163,6 +183,54 @@ export function matchRepairTemplates(
   const expectations = context.scenario?.expect ?? [];
   const routeExpectation = expectations.find((expectation) => expectation.type === "urlIncludes");
   const textExpectations = expectations.filter((expectation) => expectation.type === "text");
+
+  if (extension === ".vue") {
+    const handlerName = vueClickHandler(attributes);
+    const handler = handlerName ? vueFunctionBody(content, handlerName) : undefined;
+    const refs = vueRefNames(content);
+    if (!handlerName || !handler) return null;
+    const refName = refs[0];
+    const replaceHandlerBody = (body: string, templateId: RepairTemplateId, reason: string): RepairTemplateMatch | null => {
+      const next = `${content.slice(0, handler.start)}${body}${content.slice(handler.end)}`;
+      const diff = singleLineReplacementDiff(candidate.path, content, handler.start, {
+        start: handler.start,
+        end: handler.end,
+        text: body
+      });
+      return diff ? { templateId, path: candidate.path, diff, reason } : null;
+    };
+    if (handler.body.trim() === "") {
+      if (routeExpectation && routeExpectation.type === "urlIncludes" && routeExpectation.value.startsWith("/")) {
+        const path = routeExpectation.value;
+        return replaceHandlerBody(
+          ` window.history.pushState({}, "", ${JSON.stringify(path)}); `,
+          "missing-route-navigation",
+          `empty Vue handler ${handlerName} replaced with history navigation to "${path}"`
+        );
+      }
+      if (refs.length === 1 && textExpectations.length === 1 && textExpectations[0]?.type === "text") {
+        const value = textExpectations[0].value;
+        return replaceHandlerBody(
+          ` ${refName}.value = ${JSON.stringify(value)}; `,
+          "empty-onclick-setter",
+          `empty Vue handler ${handlerName} wired to ref ${refName} using scenario text expectation "${value}"`
+        );
+      }
+      return null;
+    }
+    const noop = /\b([A-Za-z_$][\w$]*)\.value\s*=\s*\1\.value\s*;?/.exec(handler.body);
+    if (noop && refs.includes(noop[1] ?? "") && textExpectations.length === 1 && textExpectations[0]?.type === "text") {
+      const value = textExpectations[0].value;
+      const noopRef = noop[1] ?? "";
+      const body = handler.body.slice(0, noop.index) + `${noopRef}.value = ${JSON.stringify(value)};` + handler.body.slice(noop.index + noop[0].length);
+      return replaceHandlerBody(
+        body,
+        "noop-state-update",
+        `self-assigning Vue ref ${noopRef} replaced with the scenario text expectation "${value}"`
+      );
+    }
+    return null;
+  }
 
   const emptyOnClick = EMPTY_ONCLICK_PATTERN.exec(attributes);
   if (emptyOnClick && emptyOnClick.index !== undefined) {

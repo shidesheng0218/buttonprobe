@@ -34,6 +34,20 @@ function externalMetric(result) {
   };
 }
 
+function mutationMetric(result) {
+  return {
+    generatedAt: result.generatedAt ?? new Date(0).toISOString(),
+    total: result.totalRequested ?? 0,
+    detected: result.detected ?? 0,
+    uiVerified: result.uiVerified ?? 0,
+    detectionRate: result.detectionRate ?? 0,
+    repairRate: result.repairRate ?? 0,
+    originalCheckoutModified: Boolean(result.originalCheckoutModified),
+    residue: Array.isArray(result.residueFiles) ? result.residueFiles.length : 0,
+    modelCalls: result.modelCalls ?? 0
+  };
+}
+
 function readmeBlock(snapshot) {
   const vueRow = snapshot.vue
     ? [`| Vue | ${snapshot.vue.uiVerified}/${snapshot.vue.total} UI-verified | ${snapshot.vue.sourceTop1Accuracy ?? "unknown"} | ${snapshot.vue.failedPatchResidueCount} | ${dateOnly(snapshot.vue.generatedAt)} |`]
@@ -43,6 +57,10 @@ function readmeBlock(snapshot) {
         `| External | ${snapshot.external.passed}/${snapshot.external.total} UI-verified | ${snapshot.external.sourceTop1Accuracy ?? "unknown"} | ${snapshot.external.rollbackResidue} | ${dateOnly(snapshot.external.generatedAt)} |`
       ]
     : [];
+  const mutationRows = [
+    ...(snapshot.mutationReact ? [`| Mutation React | ${snapshot.mutationReact.uiVerified}/${snapshot.mutationReact.total} UI-verified | ${snapshot.mutationReact.detectionRate} detect / ${snapshot.mutationReact.repairRate} repair | ${snapshot.mutationReact.residue} | ${dateOnly(snapshot.mutationReact.generatedAt)} |`] : []),
+    ...(snapshot.mutationVue ? [`| Mutation Vue | ${snapshot.mutationVue.uiVerified}/${snapshot.mutationVue.total} UI-verified | ${snapshot.mutationVue.detectionRate} detect / ${snapshot.mutationVue.repairRate} repair | ${snapshot.mutationVue.residue} | ${dateOnly(snapshot.mutationVue.generatedAt)} |`] : [])
+  ];
   return [
     "<!-- benchmark:start -->",
     `**${snapshot.viral.passed}/${snapshot.viral.total} viral cases passing. ${snapshot.react.uiVerified}/${snapshot.react.total} React cases UI-verified. ${snapshot.vue ? `${snapshot.vue.uiVerified}/${snapshot.vue.total} Vue cases UI-verified. ` : ""}${snapshot.external ? `${snapshot.external.passed}/${snapshot.external.total} external third-party cases UI-verified. ` : ""}Original repo pollution rate: ${snapshot.react.originalRepoPollutionRate}.**`,
@@ -52,6 +70,7 @@ function readmeBlock(snapshot) {
     `| Viral | ${snapshot.viral.passed}/${snapshot.viral.total} passing | ${snapshot.viral.sourceTop1Accuracy ?? "unknown"} | ${snapshot.viral.failedPatchResidueCount} | ${dateOnly(snapshot.viral.generatedAt)} |`,
     `| React | ${snapshot.react.uiVerified}/${snapshot.react.total} UI-verified | ${snapshot.react.sourceTop1Accuracy ?? "unknown"} | ${snapshot.react.failedPatchResidueCount} | ${dateOnly(snapshot.react.generatedAt)} |`,
     ...vueRow,
+    ...mutationRows,
     ...externalRow,
     "",
     "Generated from real local eval artifacts in `benchmarks/latest.json`.",
@@ -59,11 +78,13 @@ function readmeBlock(snapshot) {
   ].join("\n");
 }
 
-export async function updateBenchmarkSummary({ viralPath, reactPath, vuePath, externalPath, outputPath, readmePath }) {
-  const [viral, react, vue, external] = await Promise.all([
+export async function updateBenchmarkSummary({ viralPath, reactPath, vuePath, mutationReactPath, mutationVuePath, externalPath, outputPath, readmePath }) {
+  const [viral, react, vue, mutationReact, mutationVue, external] = await Promise.all([
     readFile(viralPath, "utf8").then(JSON.parse),
     readFile(reactPath, "utf8").then(JSON.parse),
     vuePath ? readFile(vuePath, "utf8").then(JSON.parse) : Promise.resolve(null),
+    mutationReactPath ? readFile(mutationReactPath, "utf8").then(JSON.parse) : Promise.resolve(null),
+    mutationVuePath ? readFile(mutationVuePath, "utf8").then(JSON.parse) : Promise.resolve(null),
     externalPath ? readFile(externalPath, "utf8").then(JSON.parse) : Promise.resolve(null)
   ]);
   const snapshot = {
@@ -71,6 +92,8 @@ export async function updateBenchmarkSummary({ viralPath, reactPath, vuePath, ex
     viral: metric(viral),
     react: metric(react),
     ...(vue ? { vue: metric(vue) } : {}),
+    ...(mutationReact ? { mutationReact: mutationMetric(mutationReact) } : {}),
+    ...(mutationVue ? { mutationVue: mutationMetric(mutationVue) } : {}),
     ...(external ? { external: externalMetric(external) } : {})
   };
   const readme = await readFile(readmePath, "utf8");
@@ -94,6 +117,8 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
     viralPath: value(process.argv, "--viral"),
     reactPath: value(process.argv, "--react"),
     vuePath: value(process.argv, "--vue"),
+    mutationReactPath: value(process.argv, "--mutation-react"),
+    mutationVuePath: value(process.argv, "--mutation-vue"),
     externalPath: value(process.argv, "--external"),
     outputPath: value(process.argv, "--output") ?? "benchmarks/latest.json",
     readmePath: value(process.argv, "--readme") ?? "README.md"

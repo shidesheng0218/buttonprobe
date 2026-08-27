@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { loadButtonProbeConfig, mergeWorkflowOptions } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { runDemo } from "./demo.js";
 import { vitePluginSnippet, writeInitialConfig } from "./init-config.js";
 import { runPatchVerification } from "./patch-proof.js";
 import { releaseGatePassed, runExternalEval, runReactEval, runViralEval, runVueEval } from "./viral-eval.js";
+import { mutationReleaseGatePassed, runMutationEval, type UiMutationId } from "./mutation-eval.js";
+import { acceptScenarioDraft, generateScenarioDraft, writeScenarioDraft } from "./scenario-generator.js";
 import { runButtonProbe } from "./workflow.js";
 import type { WorkflowOptions } from "./workflow.js";
 import type { BrowserName } from "./types.js";
@@ -269,11 +271,17 @@ program
   .option("-o, --output <directory>", "eval output directory")
   .option("--manifest <file>", "external eval manifest for eval external")
   .option("--allow-network", "allow cloning public external benchmark repositories")
+  .option("--fixture <framework>", "built-in mutation fixture: react or vue")
+  .option("--target <directory>", "local Git project for a mutation case")
+  .option("--selector <selector>", "exact target selector for a mutation case")
+  .option("--mutation <id>", "mutation id: empty-onclick-setter, noop-state-update, or missing-route-navigation")
+  .option("--expect-text <text>", "expected visible text for a state mutation")
+  .option("--expect-url-includes <path>", "expected path fragment for a route mutation")
   .option("--case <name>", "run one named fixture case")
   .option("--fail-fast", "stop fixture eval after the first failed case")
   .option("--timeout <milliseconds>", "per-case eval timeout", integer)
   .action(async (suite: string, _flags, command) => {
-    if (suite !== "viral" && suite !== "react" && suite !== "vue" && suite !== "external" && suite !== "smoke") {
+    if (suite !== "viral" && suite !== "react" && suite !== "vue" && suite !== "external" && suite !== "mutate" && suite !== "smoke") {
       throw new Error(`Unknown eval suite: ${suite}`);
     }
     const flags = command.optsWithGlobals() as {
@@ -283,6 +291,14 @@ program
       case?: string;
       failFast?: boolean;
       timeout?: number;
+      fixture?: "react" | "vue";
+      target?: string;
+      selector?: string;
+      mutation?: UiMutationId;
+      expectText?: string;
+      expectUrlIncludes?: string;
+      testCommand?: string;
+      devCommand?: string;
     };
     const output = resolve(flags.output ?? `.buttonprobe/eval/${suite}`);
     if (suite === "external") {
@@ -301,6 +317,35 @@ program
         ].join("\n") + "\n"
       );
       if (result.summary.total === 0 || result.summary.passed !== result.summary.total) process.exitCode = 1;
+      return;
+    }
+    if (suite === "mutate") {
+      if (flags.fixture && flags.fixture !== "react" && flags.fixture !== "vue") {
+        throw new Error("--fixture must be react or vue");
+      }
+      const result = await runMutationEval({
+        outputDir: output,
+        ...(flags.fixture ? { fixture: flags.fixture } : {}),
+        ...(flags.target ? { target: flags.target } : {}),
+        ...(flags.selector ? { selector: flags.selector } : {}),
+        ...(flags.mutation ? { mutation: flags.mutation } : {}),
+        ...(flags.expectText ? { expectText: flags.expectText } : {}),
+        ...(flags.expectUrlIncludes ? { expectUrlIncludes: flags.expectUrlIncludes } : {}),
+        ...(flags.testCommand ? { testCommand: flags.testCommand } : {}),
+        ...(flags.devCommand ? { devCommand: flags.devCommand } : {}),
+        ...(flags.manifest ? { manifestPath: flags.manifest } : {})
+      });
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(resolve(output, "eval-results.json"), `${JSON.stringify(result, null, 2)}\n`);
+      process.stdout.write(
+        [
+          `ButtonProbe mutation eval: ${result.uiVerified}/${result.totalRequested} UI-verified.`,
+          `Detection rate: ${result.detectionRate}`,
+          `Repair rate: ${result.repairRate}`,
+          `Results: ${resolve(output, "eval-results.json")}`
+        ].join("\n") + "\n"
+      );
+      if (flags.fixture && !mutationReleaseGatePassed(result)) process.exitCode = 1;
       return;
     }
     const evalOptions = {
@@ -339,6 +384,61 @@ program
         "The temporary demo fixture has been cleaned up."
       ].join("\n") + "\n"
     );
+  });
+
+const scenario = program.command("scenario").description("generate and accept deterministic UI behavior scenario drafts");
+
+scenario
+  .command("generate")
+  .description("observe one local control and write a high-confidence scenario draft")
+  .argument("<url>", "localhost URL to observe")
+  .requiredOption("--selector <selector>", "one target selector")
+  .option("--name <name>", "scenario name; defaults to the stable control id")
+  .option("--project-root <directory>", "project root for the generated draft", process.cwd())
+  .option("--output <file>", "generated scenario file path")
+  .option("--timeout <milliseconds>", "post-click observation window", integer)
+  .option("--unsafe", "allow controls with destructive labels")
+  .action(async (url: string, _flags, command) => {
+    const flags = command.optsWithGlobals() as { selector: string; name?: string; projectRoot: string; output?: string; timeout?: number; unsafe?: boolean };
+    const projectRoot = resolve(flags.projectRoot);
+    const output = resolve(flags.output ?? join(projectRoot, ".buttonprobe", "scenarios.generated.json"));
+    const draft = await generateScenarioDraft({
+      baseUrl: url,
+      selector: flags.selector,
+      ...(flags.name ? { name: flags.name } : {}),
+      ...(flags.timeout ? { timeoutMs: flags.timeout } : {}),
+      unsafe: Boolean(flags.unsafe)
+    });
+    await writeScenarioDraft(output, draft);
+    process.stdout.write(
+      [
+        `ButtonProbe scenario draft: ${draft.confidence}`,
+        `Name: ${draft.name}`,
+        `File: ${output}`,
+        ...(draft.evidence.rejectionReason ? [`Reason: ${draft.evidence.rejectionReason}`] : [])
+      ].join("\n") + "\n"
+    );
+    if (draft.confidence !== "high") process.exitCode = 1;
+  });
+
+scenario
+  .command("accept")
+  .description("explicitly import a high-confidence scenario draft into .buttonprobe/config.json")
+  .requiredOption("--file <file>", "generated scenario JSON file")
+  .requiredOption("--name <name>", "draft name to import")
+  .option("--project-root <directory>", "project root", process.cwd())
+  .option("--force", "overwrite an existing scenario with the same name")
+  .action(async (_flags, command) => {
+    const flags = command.optsWithGlobals() as { file: string; name: string; projectRoot: string; force?: boolean };
+    const { readFile, mkdir, writeFile } = await import("node:fs/promises");
+    const projectRoot = resolve(flags.projectRoot);
+    const configPath = join(projectRoot, ".buttonprobe", "config.json");
+    const current = await readFile(configPath, "utf8").then((content) => JSON.parse(content) as Record<string, unknown>).catch(() => ({}));
+    const generated = JSON.parse(await readFile(resolve(flags.file), "utf8"));
+    const next = acceptScenarioDraft({ config: current, generated, name: flags.name, force: Boolean(flags.force) });
+    await mkdir(join(projectRoot, ".buttonprobe"), { recursive: true });
+    await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
+    process.stdout.write(`Accepted scenario "${flags.name}" into ${configPath}\n`);
   });
 
 program

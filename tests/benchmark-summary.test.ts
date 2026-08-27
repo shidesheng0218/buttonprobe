@@ -23,16 +23,34 @@ test("creates a README benchmark block from actual eval JSON", async () => {
   const viral = join(root, "viral.json");
   const react = join(root, "react.json");
   const vue = join(root, "vue.json");
+  const mutationReact = join(root, "mutation-react.json");
   const output = join(root, "latest.json");
   const readme = join(root, "README.md");
   await Promise.all([
     writeFile(viral, JSON.stringify(evalResult("fixtures/viral-demo-react", 5, 5))),
     writeFile(react, JSON.stringify(evalResult("fixtures/react-repair-suite", 9, 10))),
     writeFile(vue, JSON.stringify(evalResult("fixtures/vue-repair-suite", 5, 5))),
+    writeFile(mutationReact, JSON.stringify({
+      schemaVersion: 1,
+      target: "fixture:react",
+      framework: "react",
+      totalRequested: 3,
+      injected: 3,
+      skipped: 0,
+      detected: 3,
+      uiVerified: 3,
+      detectionRate: 1,
+      repairRate: 1,
+      baselineUnexpectedIssueCount: 0,
+      originalCheckoutModified: false,
+      residueFiles: [],
+      modelCalls: 0,
+      cases: []
+    })),
     writeFile(readme, "before\n<!-- benchmark:start -->\nold\n<!-- benchmark:end -->\nafter\n")
   ]);
 
-  await updateBenchmarkSummary({ viralPath: viral, reactPath: react, vuePath: vue, outputPath: output, readmePath: readme });
+  await updateBenchmarkSummary({ viralPath: viral, reactPath: react, vuePath: vue, mutationReactPath: mutationReact, outputPath: output, readmePath: readme });
 
   const latest = JSON.parse(await readFile(output, "utf8"));
   const updatedReadme = await readFile(readme, "utf8");
@@ -40,5 +58,6 @@ test("creates a README benchmark block from actual eval JSON", async () => {
   expect(updatedReadme).toContain("5/5 viral cases passing");
   expect(updatedReadme).toContain("9/10 React cases UI-verified");
   expect(updatedReadme).toContain("5/5 Vue cases UI-verified");
+  expect(updatedReadme).toContain("Mutation React");
   expect(updatedReadme).toContain("2026-08-17");
 });

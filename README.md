@@ -25,9 +25,11 @@ npx buttonprobe verify http://localhost:5173 \
 
 | Suite | Result | Source Top-1 | Residue | Evidence date |
 | --- | --- | --- | --- | --- |
-| Viral | 5/5 passing | 1 | 0 | 2026-08-20 |
-| React | 10/10 UI-verified | 1 | 0 | 2026-08-20 |
-| Vue | 5/5 UI-verified | 1 | 0 | 2026-08-20 |
+| Viral | 5/5 passing | 1 | 0 | 2026-08-27 |
+| React | 10/10 UI-verified | 1 | 0 | 2026-08-27 |
+| Vue | 5/5 UI-verified | 1 | 0 | 2026-08-27 |
+| Mutation React | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-08-27 |
+| Mutation Vue | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-08-27 |
 | External | 1/1 UI-verified | 1 | 0 | 2026-08-20 |
 
 Generated from real local eval artifacts in `benchmarks/latest.json`.
@@ -120,6 +122,8 @@ Run the benchmarks:
 npx buttonprobe eval viral
 npx buttonprobe eval react
 npx buttonprobe eval vue
+npx buttonprobe eval mutate --fixture react
+npx buttonprobe eval mutate --fixture vue
 ```
 
 The React suite runs 10 isolated Git fixtures, each rendered by a real Vite + React 18 app instead of a canned server. Every repair must pass a real `vite build` in an isolated worktree plus browser-level UI verification before a verified diff is issued, and the working-control case must stay unchanged. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
@@ -200,6 +204,16 @@ Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contr
 It exposes `status`, `proof-path`, `report-path`, `verified-diff-path`, `model-calls`, and `original-checkout-modified`. Upload the proof directory with `actions/upload-artifact`; a complete workflow is in [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml).
 
 The repository maintainer checklist for publishing the Action is in [docs/launch/action-marketplace.md](docs/launch/action-marketplace.md).
+
+Set `comment: true` to post one updatable proof summary on a pull request. This is opt-in and needs explicit workflow permissions:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+Without those permissions, verification keeps its normal proof status and the Action records a comment warning in the Job Summary instead of failing the proof gate.
 
 ## Verify Any Patch
 
@@ -337,6 +351,42 @@ Use scenario contracts when a DOM change is not enough proof. Scenarios are dete
 
 Legacy `behaviorContracts` still work and are internally converted to single-click scenarios.
 
+Generate a high-confidence draft from one observed local interaction without calling a model:
+
+```bash
+npx buttonprobe scenario generate http://localhost:5173 \
+  --selector "[data-testid='save']"
+
+npx buttonprobe scenario accept \
+  --file .buttonprobe/scenarios.generated.json \
+  --name save
+```
+
+Generation writes only `.buttonprobe/scenarios.generated.json`. It records unique visible text, stable visible elements, same-origin navigation, safe success-network evidence, and a clean console when those observations are deterministic. `scenario accept` is the explicit step that imports a high-confidence draft into `.buttonprobe/config.json`; existing names require `--force` to overwrite.
+
+## UI Mutation Benchmark
+
+ButtonProbe can prove its scanner and repair templates by starting from a healthy React/Vite or Vue/Vite fixture, injecting a known UI failure in an isolated worktree, then requiring detection and `ui-verified` recovery with zero model calls.
+
+```bash
+npx buttonprobe eval mutate --fixture react
+npx buttonprobe eval mutate --fixture vue
+```
+
+For a local Git project, commands are explicit and ButtonProbe never installs dependencies or guesses shell commands:
+
+```bash
+npx buttonprobe eval mutate \
+  --target ./my-app \
+  --selector "[data-testid='save']" \
+  --mutation noop-state-update \
+  --expect-text "Saved" \
+  --test-command "npm test" \
+  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
+```
+
+The result reports separate detection and repair rates, model calls, original-checkout state, and residue. Batch local cases can use `--manifest buttonprobe.mutations.json` with the same explicit fields.
+
 ## Source Mapping
 
 For Vite apps, add the development-only source anchor plugin:
@@ -364,6 +414,8 @@ npx buttonprobe verify http://localhost:5173 --patch-url "https://github.com/own
 npx buttonprobe eval viral
 npx buttonprobe eval react
 npx buttonprobe eval vue
+npx buttonprobe eval mutate --fixture react
+npx buttonprobe scenario generate http://localhost:5173 --selector "[data-testid='save']"
 npx buttonprobe doctor http://localhost:5173 --test-command "npm test"
 npx buttonprobe init --url http://localhost:5173 --test-command "npm test" --yes
 npx buttonprobe mcp

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "viral": {
-    "generatedAt": "2026-08-20T10:34:47.810Z",
+    "generatedAt": "2026-08-27T04:41:20.981Z",
     "passed": 5,
     "total": 5,
     "uiVerified": 4,
@@ -10,7 +10,7 @@
     "sourceTop1Accuracy": 1
   },
   "react": {
-    "generatedAt": "2026-08-20T10:35:20.177Z",
+    "generatedAt": "2026-08-27T04:41:53.531Z",
     "passed": 10,
     "total": 10,
     "uiVerified": 10,
@@ -19,13 +19,35 @@
     "sourceTop1Accuracy": 1
   },
   "vue": {
-    "generatedAt": "2026-08-20T10:35:36.830Z",
+    "generatedAt": "2026-08-27T04:42:07.763Z",
     "passed": 5,
     "total": 5,
     "uiVerified": 5,
     "originalRepoPollutionRate": 0,
     "failedPatchResidueCount": 0,
     "sourceTop1Accuracy": 1
+  },
+  "mutationReact": {
+    "generatedAt": "2026-08-27T04:42:30.062Z",
+    "total": 3,
+    "detected": 3,
+    "uiVerified": 3,
+    "detectionRate": 1,
+    "repairRate": 1,
+    "originalCheckoutModified": false,
+    "residue": 0,
+    "modelCalls": 0
+  },
+  "mutationVue": {
+    "generatedAt": "2026-08-27T04:42:50.061Z",
+    "total": 3,
+    "detected": 3,
+    "uiVerified": 3,
+    "detectionRate": 1,
+    "repairRate": 1,
+    "originalCheckoutModified": false,
+    "residue": 0,
+    "modelCalls": 0
   },
   "external": {
     "generatedAt": "2026-08-20T10:38:48.462Z",

@@ -5,6 +5,9 @@ on:
 
 jobs:
   verify-ui-repair:
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -26,6 +29,8 @@ jobs:
           dev-command: npm run dev -- --host 127.0.0.1 --port {port}
           browser: chromium
           buttonprobe-version: 0.1.0-alpha.1
+          comment: true
+          github-token: ${{ github.token }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

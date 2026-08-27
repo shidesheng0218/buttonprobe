@@ -36,6 +36,14 @@ inputs:
   fail-on-unverified:
     required: false
     default: "true"
+  comment:
+    required: false
+    default: "false"
+    description: Post or update a compact ButtonProbe proof comment on pull requests. Requires pull-requests: write.
+  github-token:
+    required: false
+    default: ${{ github.token }}
+    description: GitHub token used only when comment is true.
 outputs:
   status:
     description: patch-applies, test-verified, ui-verified, or rejected.
@@ -49,6 +57,10 @@ outputs:
     description: Model calls used by verification; expected to be 0.
   original-checkout-modified:
     description: Whether the source checkout changed.
+  comment-status:
+    description: skipped, posted, updated, or warning.
+  comment-url:
+    description: URL of the fixed ButtonProbe proof comment when one was posted.
 runs:
   using: node20
   main: scripts/action.mjs

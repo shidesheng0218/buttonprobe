@@ -79,6 +79,7 @@
     "eval:viral": "tsx src/cli.ts eval viral --output .buttonprobe/eval/viral",
     "eval:react": "tsx src/cli.ts eval react --output .buttonprobe/eval/react",
     "eval:vue": "tsx src/cli.ts eval vue --output .buttonprobe/eval/vue",
+    "eval:mutate": "tsx src/cli.ts eval mutate --fixture react --output .buttonprobe/eval/mutate-react && tsx src/cli.ts eval mutate --fixture vue --output .buttonprobe/eval/mutate-vue",
     "eval:external": "tsx src/cli.ts eval external --manifest fixtures/external-react/manifest.json --allow-network --output .buttonprobe/eval/external"
   },
   "engines": {
