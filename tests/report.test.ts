@@ -194,6 +194,8 @@ test("writes a self-contained report with verdicts and repair history", async ()
   expect(html).toContain("Evidence: test-verified");
   expect(html).toContain("Counterfactual:</strong> baseline click unchanged; patched click changed");
   expect(html).toContain("Behavior contract:</strong> passed");
+  expect(html).toContain("Failure stage");
+  expect(html).toContain("Source candidates");
   expect(html).toContain("BLOCKED_MUTATION<strong>1</strong>");
   expect(html).toContain("BACKEND_ERROR<strong>1</strong>");
 });

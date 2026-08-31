@@ -27,6 +27,43 @@ test("only admits a clean 100 percent built-in mutation result through the relea
     originalCheckoutModified: false,
     residueFiles: [],
     modelCalls: 0,
-    cases: []
+    cases: [
+      {
+        name: "fixture/react/empty-onclick",
+        mutation: "empty-onclick-setter",
+        selector: '[data-testid="empty-onclick"]',
+        status: "passed",
+        detected: true,
+        uiVerified: true,
+        modelCalls: 0,
+        artifactDir: "cases/empty-onclick",
+        residueFiles: [],
+        originalCheckoutModified: false
+      },
+      {
+        name: "fixture/react/noop-state",
+        mutation: "noop-state-update",
+        selector: '[data-testid="noop-state"]',
+        status: "passed",
+        detected: true,
+        uiVerified: true,
+        modelCalls: 0,
+        artifactDir: "cases/noop-state",
+        residueFiles: [],
+        originalCheckoutModified: false
+      },
+      {
+        name: "fixture/react/missing-route",
+        mutation: "missing-route-navigation",
+        selector: '[data-testid="missing-route"]',
+        status: "passed",
+        detected: true,
+        uiVerified: true,
+        modelCalls: 0,
+        artifactDir: "cases/missing-route",
+        residueFiles: [],
+        originalCheckoutModified: false
+      }
+    ]
   })).toBe(true);
 });

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { buildActionArgs, buildProofComment, parseActionInputs, publishPullRequestComment, shouldFailAction } from "../scripts/action.mjs";
+import { buildActionArgs, buildJobSummary, buildProofComment, parseActionInputs, publishPullRequestComment, shouldFailAction } from "../scripts/action.mjs";
 
 test("parses the zero-model PR verification action inputs", () => {
   const inputs = parseActionInputs({
@@ -16,7 +16,8 @@ test("parses the zero-model PR verification action inputs", () => {
     patchUrl: "https://github.com/example/repo/pull/12.diff",
     testCommand: "npm test",
     browser: "chromium,firefox",
-    failOnUnverified: true
+    failOnUnverified: true,
+    timeoutMs: 300000
   });
 });
 
@@ -40,13 +41,47 @@ test("builds a redacted proof comment summary", () => {
     status: "ui-verified",
     modelCalls: 0,
     originalCheckoutModified: false,
+    target: { id: "save", selector: '[data-testid="save"]' },
+    diagnostics: {
+      failureStage: null,
+      sourceCandidates: [{ path: "src/App.tsx", score: 31, reason: "exact test id" }],
+      scenarioFailures: [],
+      regressions: []
+    },
     ui: { targetWorks: true, regressions: [], browsers: [{ browser: "chromium", status: "passed", targetWorks: true, regressions: [] }] },
     artifacts: { report: "report.html", screenshots: [], testLog: "test.log" },
     rejectionReason: "secret-key-should-not-appear"
   }, { output: "buttonprobe-proof" });
   expect(comment).toContain("ui-verified");
   expect(comment).toContain("model calls: 0");
+  expect(comment).toContain('[data-testid="save"]');
+  expect(comment).toContain("src/App.tsx (31)");
   expect(comment).not.toContain("secret-key-should-not-appear");
+});
+
+test("parses the five-minute proof budget", () => {
+  expect(parseActionInputs({
+    INPUT_URL: "http://127.0.0.1:5173",
+    INPUT_PATCH: "change.diff",
+    INPUT_TEST_COMMAND: "npm test",
+    INPUT_TIMEOUT_MS: "120000"
+  })).toMatchObject({ timeoutMs: 120000 });
+});
+
+test("builds a diagnostic Job Summary for failed proofs", () => {
+  const summary = buildJobSummary({
+    status: "rejected",
+    target: { id: "save", selector: '[data-testid="save"]' },
+    diagnostics: { failureStage: "scenario", sourceCandidates: [{ path: "src/App.tsx", score: 28 }], scenarioFailures: [], regressions: [] },
+    browsers: [{ browser: "chromium", status: "failed" }],
+    modelCalls: 0,
+    originalCheckoutModified: false,
+    artifacts: { report: "report.html" }
+  }, { output: "buttonprobe-proof" }, { status: "skipped" });
+
+  expect(summary).toContain("Failure stage: scenario");
+  expect(summary).toContain("src/App.tsx (28)");
+  expect(summary).toContain("[data-testid=\"save\"]");
 });
 
 test("creates then updates only the fixed ButtonProbe PR comment", async () => {
@@ -85,7 +120,8 @@ test("builds a verification-only command with no apply escape hatch", () => {
     target: "[data-testid='save']",
     browser: "chromium",
     packageVersion: "0.1.0-alpha.1",
-    failOnUnverified: true
+    failOnUnverified: true,
+    timeoutMs: 300000
   });
 
   expect(args).toEqual([

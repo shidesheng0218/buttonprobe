@@ -77,7 +77,14 @@ describe("patch proof verification", () => {
       outputDir,
       testCommand: "node -e \"const fs=require('fs');if(!fs.readFileSync('src/App.tsx','utf8').includes('enabled = true'))process.exit(1)\"",
       devCommand: "node server.mjs",
-      interactionTimeoutMs: 40
+      interactionTimeoutMs: 40,
+      scenarios: {
+        save: {
+          target: '[data-testid="save"]',
+          actions: [{ type: "click", selector: '[data-testid="save"]' }],
+          expect: [{ type: "text", value: "Saved" }, { type: "consoleClean" }]
+        }
+      }
     });
 
     expect(result.status).toBe("ui-verified");
@@ -100,6 +107,31 @@ describe("patch proof verification", () => {
     await expect(validateProofArtifacts(join(outputDir, "proof.json"), outputDir)).resolves.toBeUndefined();
   });
 
+  test("rejects a proof without a scenario and writes a generated draft", async () => {
+    const root = await createRepo();
+    const app = await listen(createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end('<button data-testid="save">Save</button><button data-testid="normal" onclick="this.textContent=\'Normal done\'">Normal</button>');
+    }));
+    const outputDir = join(root, ".buttonprobe", "proof-no-scenario");
+    const patch = join(root, "agent.diff");
+    await writeFile(patch, "--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1,2 +1,2 @@\n-export const enabled = false;\n+export const enabled = true;\n export const breakNormal = false;\n");
+
+    const result = await runPatchVerification({
+      baseUrl: app,
+      patchPath: patch,
+      projectRoot: root,
+      outputDir,
+      testCommand: "node -e \"process.exit(0)\"",
+      devCommand: "node server.mjs",
+      interactionTimeoutMs: 40
+    });
+
+    expect(result.status).toBe("rejected");
+    expect(result.reason).toContain("scenario");
+    await expect(stat(join(outputDir, "scenarios.generated.json"))).resolves.toBeTruthy();
+  });
+
   test("rejects an external patch that breaks a same-page working control", async () => {
     const root = await createRepo();
     const app = await listen(createServer((_request, response) => {
@@ -120,7 +152,14 @@ describe("patch proof verification", () => {
       outputDir,
       testCommand: "node -e \"process.exit(0)\"",
       devCommand: "node server.mjs",
-      interactionTimeoutMs: 40
+      interactionTimeoutMs: 40,
+      scenarios: {
+        save: {
+          target: '[data-testid="save"]',
+          actions: [{ type: "click", selector: '[data-testid="save"]' }],
+          expect: [{ type: "text", value: "Saved" }, { type: "consoleClean" }]
+        }
+      }
     });
 
     expect(result.status).toBe("rejected");

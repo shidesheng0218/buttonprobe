@@ -171,6 +171,8 @@ export function mutationReleaseGatePassed(result: MutationEvalResult): boolean {
     result.detectionRate === 1 &&
     result.repairRate === 1 &&
     result.uiVerified === result.totalRequested &&
+    result.baselineUnexpectedIssueCount === 0 &&
+    result.cases.every((item) => item.status === "passed" && item.detected && item.uiVerified) &&
     !result.originalCheckoutModified &&
     result.residueFiles.length === 0 &&
     result.modelCalls === 0;

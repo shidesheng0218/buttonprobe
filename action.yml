@@ -44,6 +44,10 @@ inputs:
     required: false
     default: ${{ github.token }}
     description: GitHub token used only when comment is true.
+  timeout-ms:
+    required: false
+    default: "300000"
+    description: Hard proof budget in milliseconds, capped at five minutes.
 outputs:
   status:
     description: patch-applies, test-verified, ui-verified, or rejected.

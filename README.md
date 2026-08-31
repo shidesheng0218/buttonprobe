@@ -203,6 +203,8 @@ Use ButtonProbe as a required PR check when another AI, an IDE agent, or a contr
 
 It exposes `status`, `proof-path`, `report-path`, `verified-diff-path`, `model-calls`, and `original-checkout-modified`. Upload the proof directory with `actions/upload-artifact`; a complete workflow is in [examples/buttonprobe-verify-pr.yml](examples/buttonprobe-verify-pr.yml).
 
+The proof gate has a five-minute hard budget, never applies or commits a patch, and requires an explicit scenario contract for a passing UI proof. When a target has no scenario, the Action writes `scenarios.generated.json` as an artifact and fails closed so a developer can review and accept the contract.
+
 The repository maintainer checklist for publishing the Action is in [docs/launch/action-marketplace.md](docs/launch/action-marketplace.md).
 
 Set `comment: true` to post one updatable proof summary on a pull request. This is opt-in and needs explicit workflow permissions:

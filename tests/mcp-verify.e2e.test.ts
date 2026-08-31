@@ -42,6 +42,16 @@ async function createRepo(): Promise<string> {
     ].join("\n")
   );
   await writeFile(join(root, ".gitignore"), ".buttonprobe\nnode_modules\n");
+  await mkdir(join(root, ".buttonprobe"));
+  await writeFile(join(root, ".buttonprobe", "config.json"), JSON.stringify({
+    scenarios: {
+      save: {
+        target: '[data-testid="save"]',
+        actions: [{ type: "click", selector: '[data-testid="save"]' }],
+        expect: [{ type: "text", value: "Saved" }, { type: "consoleClean" }]
+      }
+    }
+  }));
   execFileSync("git", ["init", "-b", "main"], { cwd: root });
   execFileSync("git", ["add", "."], { cwd: root });
   execFileSync("git", ["-c", "user.name=ButtonProbe", "-c", "user.email=test@example.com", "commit", "-m", "initial"], {

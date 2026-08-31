@@ -23,6 +23,8 @@ export interface ReportData {
   rejectionReason?: string;
   browsers?: UIBrowserResult[];
   artifacts?: ProofArtifacts;
+  diagnostics?: import("./types.js").ProofDiagnostics;
+  timeline?: string[];
 }
 
 function escapeHtml(value: string): string {
@@ -175,10 +177,17 @@ export async function writeReport(
   const browsers = data.browsers ?? data.repairs.flatMap((repair) =>
     repair.result.attempts.flatMap((attempt) => attempt.ui?.browsers ?? [])
   );
+  const diagnostics = data.diagnostics ?? {
+    failureStage: null,
+    sourceCandidates: data.repairs.flatMap((repair) => repair.sourceCandidates ?? []).slice(0, 3),
+    scenarioFailures: data.repairs.flatMap((repair) => repair.result.attempts.flatMap((attempt) => attempt.ui?.behaviorContract?.failures ?? [])),
+    regressions: data.repairs.flatMap((repair) => repair.result.attempts.flatMap((attempt) => attempt.ui?.regressions ?? []))
+  };
   const artifactLines = [
     data.artifacts?.verifiedDiff ? `verified diff: ${data.artifacts.verifiedDiff}` : "",
     data.artifacts?.proof ? `proof: ${data.artifacts.proof}` : "",
     data.artifacts?.testLog ? `test log: ${data.artifacts.testLog}` : "",
+    data.artifacts?.scenarioDraft ? `scenario draft: ${data.artifacts.scenarioDraft}` : "",
     ...(data.artifacts?.screenshots?.map((screenshot) => `screenshot: ${screenshot}`) ?? [])
   ].filter(Boolean);
 
@@ -237,10 +246,12 @@ export async function writeReport(
     </div>
     <p>original checkout modified: ${originalCheckoutModified}</p>
     ${data.rejectionReason ? `<p class="error">Rejection reason: ${escapeHtml(data.rejectionReason)}</p>` : ""}
+    <section class="diagnostics"><p><strong>Failure stage:</strong> ${escapeHtml(diagnostics.failureStage ?? "none")}</p><p><strong>Source candidates:</strong> ${diagnostics.sourceCandidates.length ? diagnostics.sourceCandidates.slice(0, 3).map((candidate) => `${escapeHtml(candidate.path)} (${candidate.score ?? 0})`).join(" · ") : "none"}</p>${diagnostics.scenarioFailures.length ? `<p class="error"><strong>Scenario failures:</strong> ${escapeHtml(diagnostics.scenarioFailures.join("; "))}</p>` : ""}${diagnostics.regressions.length ? `<p class="error"><strong>Regressions:</strong> ${escapeHtml(diagnostics.regressions.join(", "))}</p>` : ""}${diagnostics.nextStep ? `<p><strong>Next step:</strong> ${escapeHtml(diagnostics.nextStep)}</p>` : ""}</section>
     ${browsers.length ? `<p><strong>Browser matrix:</strong> ${browsers.map((browser) => `${escapeHtml(browser.browser)}: ${escapeHtml(browser.status)}`).join(" · ")}</p>` : ""}
     ${data.modelDataManifest ? `<p>Model data: ${escapeHtml(data.modelDataManifest.endpointHost)} · ${data.modelDataManifest.sourceFiles.length} source file(s) · ${data.modelDataManifest.screenshotCount} screenshot(s) · redaction ${data.modelDataManifest.redactionApplied ? "enabled" : "disabled"}</p>` : ""}
     ${artifactLines.length ? `<p><strong>Proof artifacts:</strong> ${artifactLines.map(escapeHtml).join(" · ")}</p>` : ""}
     <p>baseline -&gt; locate -&gt; diagnose -&gt; validate -&gt; worktree test -&gt; counterfactual UI -&gt; verified.diff</p>
+    <p><strong>Timeline:</strong> ${(data.timeline ?? ["diff", "scan", "locate", "scenario", "test", "browser", "regression", "artifact"]).map(escapeHtml).join(" -&gt; ")}</p>
     <div class="commands">
       <div class="command"><span>Rerun scan</span><code>buttonprobe scan ${escapeHtml(scan.baseUrl)}</code></div>
       <div class="command"><span>Apply verified diff</span><code>git apply .buttonprobe/repairs/&lt;control&gt;/verified.diff</code></div>

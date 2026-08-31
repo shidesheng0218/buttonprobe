@@ -7,6 +7,8 @@ import { writeReport } from "./report.js";
 import { scanApplication } from "./scanner.js";
 import { createWorktreeRepairSession } from "./worktree-repair.js";
 import { createRepairProofV2, proofArtifactPaths } from "./proof-schema.js";
+import { generateScenarioDraft, writeScenarioDraft } from "./scenario-generator.js";
+import { locateSourceCandidates } from "./source-locator.js";
 import type {
   AIUsageSummary,
   BusinessProfile,
@@ -219,11 +221,53 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
   let reason = "Patch was generated but not verified";
   let ui: UIVerification | undefined;
   let verifiedDiffPath: string | undefined;
+  let scenarioDraftPath: string | undefined;
+  let sourceCandidates: import("./types.js").SourceCandidateEvidence[] = [];
+  let failureStage: import("./types.js").ProofFailureStage = null;
+  let nextStep: string | undefined;
 
   if (!target) {
     status = "rejected";
     reason = "No failing target control was found in the baseline scan";
+    failureStage = "scan";
+    nextStep = "Provide --target for a failing control or fix the baseline application first";
   } else {
+    const issue = {
+      controlId: target.id,
+      pageUrl: target.pageUrl,
+      selector: target.selector,
+      label: target.text || target.ariaLabel || target.selector,
+      verdict: target.verdict,
+      evidence: target.evidence
+    } as import("./types.js").RepairIssue;
+    sourceCandidates = (await locateSourceCandidates(projectRoot, issue)).slice(0, 3).map((candidate) => ({
+      path: candidate.path,
+      ...(candidate.score !== undefined ? { score: candidate.score } : {}),
+      ...(candidate.reason !== undefined ? { reason: candidate.reason } : {}),
+      ...(candidate.strongIdentity !== undefined ? { strongIdentity: candidate.strongIdentity } : {}),
+      ...(candidate.eventChain !== undefined ? { eventChain: candidate.eventChain } : {})
+    }));
+    const scenario = scenarioForControl(target.id, target.selector, target.pageUrl, options.scenarios);
+    if (!scenario) {
+      const draft = await generateScenarioDraft({
+        baseUrl: options.baseUrl,
+        selector: target.selector,
+        name: target.id,
+        timeoutMs: interactionTimeoutMs,
+        unsafe: options.unsafe ?? false
+      });
+      scenarioDraftPath = "scenarios.generated.json";
+      await writeScenarioDraft(join(outputDir, scenarioDraftPath), draft);
+      status = "rejected";
+      failureStage = "scenario";
+      reason = draft.confidence === "high"
+        ? "No scenario contract was configured; review scenarios.generated.json and accept it before rerunning"
+        : `No scenario contract was configured and generated evidence was ${draft.confidence}`;
+      nextStep = draft.confidence === "high"
+        ? `Run buttonprobe scenario accept --file scenarios.generated.json --name ${target.id}`
+        : "Add an explicit scenario with a post-click expectation; ButtonProbe will not guess the behavior";
+    }
+    if (scenario) {
     const baselineFailed = !(await interactionChangesAfterClick({
       url: target.pageUrl,
       selector: target.selector,
@@ -261,7 +305,6 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
                 timeoutMs: interactionTimeoutMs,
                 browserName
               });
-              const scenario = scenarioForControl(target.id, target.selector, target.pageUrl, options.scenarios);
               const behaviorContract = scenario
                 ? await verifyScenarioContract({
                     baseUrl,
@@ -299,6 +342,26 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
       (verified.ok
         ? "Patch verified in an isolated worktree; current checkout was not modified"
         : "Patch was rejected in isolated verification");
+    if (status !== "ui-verified") {
+      failureStage = verified.ui?.regressions.length
+        ? "regression"
+        : verified.ui?.behaviorContract && !verified.ui.behaviorContract.passed
+          ? "scenario"
+          : verified.ui && !verified.ui.targetWorks
+            ? "browser"
+            : verified.tests.passed
+              ? "diff"
+              : "test";
+      nextStep = failureStage === "regression"
+        ? "Inspect the regression control list and remove unrelated behavior changes"
+        : failureStage === "scenario"
+          ? "Update the scenario contract or fix the patched behavior"
+          : failureStage === "browser"
+            ? "Inspect browser screenshots and counterfactual evidence"
+            : failureStage === "test"
+              ? "Fix the failing test command in the isolated worktree"
+              : "Inspect the rejected diff and rerun verification";
+    }
     attempts.push({
       round: 1,
       tests: verified.tests,
@@ -309,6 +372,7 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     if (verified.ok && verified.evidenceStatus === "ui-verified" && options.apply && verified.verifiedDiffPath) {
       await applyPatch(projectRoot, patch);
       reason = "Patch was UI-verified and applied to the current checkout";
+    }
     }
   }
 
@@ -346,16 +410,25 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     proofStatus: status as import("./types.js").RepairProofStatus,
     ...(status === "rejected" ? { rejectionReason: reason } : {}),
     ...(ui?.browsers ? { browsers: ui.browsers } : {}),
+    diagnostics: {
+      failureStage,
+      sourceCandidates,
+      scenarioFailures: ui?.behaviorContract?.failures ?? [],
+      regressions: ui?.regressions ?? [],
+      ...(nextStep ? { nextStep } : {})
+    },
+    timeline: ["diff", "scan", "locate", "scenario", "test", "browser", "regression", "artifact"],
     artifacts: {
       ...(verifiedDiffPath ? { verifiedDiff: relative(outputDir, verifiedDiffPath) } : {}),
       proof: "proof.json",
       testLog: "test.log",
-      screenshots: proofScreenshotPaths(baselineControls, ui)
+      screenshots: proofScreenshotPaths(baselineControls, ui),
+      ...(scenarioDraftPath ? { scenarioDraft: scenarioDraftPath } : {})
     }
   });
   const proofPath = join(outputDir, "proof.json");
   const proof = createRepairProofV2({
-    status,
+    status: status === "patch-generated" ? "rejected" : status,
     patch: { source: patchInput.source, content: patch },
     ...(target
       ? {
@@ -377,11 +450,19 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
     regressions: ui?.regressions ?? [],
     originalCheckoutModified,
     modelCalls: usageSummary.modelCalls,
+    diagnostics: {
+      failureStage,
+      sourceCandidates,
+      scenarioFailures: ui?.behaviorContract?.failures ?? [],
+      regressions: ui?.regressions ?? [],
+      ...(nextStep ? { nextStep } : {})
+    },
     artifacts: {
       report: relative(outputDir, reportPath),
       ...(verifiedDiffPath ? { verifiedDiff: relative(outputDir, verifiedDiffPath) } : {}),
       screenshots: proofScreenshotPaths(baselineControls, ui),
-      testLog: "test.log"
+      testLog: "test.log",
+      ...(scenarioDraftPath ? { scenarioDraft: scenarioDraftPath } : {})
     },
     ...(status === "rejected" ? { rejectionReason: reason } : {})
   });

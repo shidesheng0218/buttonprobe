@@ -254,6 +254,17 @@ export interface ProofArtifacts {
   proof?: string;
   testLog?: string;
   screenshots?: string[];
+  scenarioDraft?: string;
+}
+
+export type ProofFailureStage = "diff" | "scan" | "locate" | "scenario" | "test" | "browser" | "regression" | "artifact" | "timeout" | null;
+
+export interface ProofDiagnostics {
+  failureStage: ProofFailureStage;
+  sourceCandidates: SourceCandidateEvidence[];
+  scenarioFailures: string[];
+  regressions: string[];
+  nextStep?: string;
 }
 
 export interface RepairProofV2 {
@@ -279,11 +290,13 @@ export interface RepairProofV2 {
   regressions: string[];
   originalCheckoutModified: boolean;
   modelCalls: number;
+  diagnostics?: ProofDiagnostics;
   artifacts: {
     report: string;
     verifiedDiff?: string;
     screenshots: string[];
     testLog: string;
+    scenarioDraft?: string;
   };
   rejectionReason?: string;
 }

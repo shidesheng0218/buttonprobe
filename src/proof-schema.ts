@@ -39,6 +39,7 @@ export function proofArtifactPaths(proof: Pick<RepairProofV2, "artifacts">): str
     proof.artifacts.report,
     ...(proof.artifacts.verifiedDiff ? [proof.artifacts.verifiedDiff] : []),
     ...proof.artifacts.screenshots,
-    proof.artifacts.testLog
+    proof.artifacts.testLog,
+    ...(proof.artifacts.scenarioDraft ? [proof.artifacts.scenarioDraft] : [])
   ];
 }

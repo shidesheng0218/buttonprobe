@@ -1,4 +1,4 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
 function input(env, name, fallback = "") {
@@ -26,7 +26,8 @@ export function parseActionInputs(env = process.env) {
     packageVersion: input(env, "buttonprobe-version", "latest"),
     failOnUnverified: input(env, "fail-on-unverified", "true") !== "false",
     comment: input(env, "comment", "false") === "true",
-    githubToken: input(env, "github-token")
+    githubToken: input(env, "github-token"),
+    timeoutMs: Math.max(1000, Math.min(Number.parseInt(input(env, "timeout-ms", "300000"), 10) || 300000, 300000))
   };
 }
 
@@ -44,11 +45,19 @@ export function buildActionArgs(values) {
   return args;
 }
 
-function run(command, args, cwd) {
+function run(command, args, cwd, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: "inherit" });
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); }, 1000).unref();
+      resolve({ code: 124, timedOut: true });
+    }, timeoutMs);
     child.on("error", reject);
-    child.on("close", (code) => resolve(code ?? 1));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? 1, timedOut: false });
+    });
   });
 }
 
@@ -74,6 +83,14 @@ export function buildProofComment(proof, values) {
   const reason = proof.rejectionReason && !/secret|token|key/i.test(proof.rejectionReason)
     ? `\n- rejection: ${redact(proof.rejectionReason).slice(0, 500)}`
     : "";
+  const target = proof.target ? `\n- target: \`${redact(proof.target.selector ?? proof.target.id)}\`` : "";
+  const candidates = (proof.diagnostics?.sourceCandidates ?? [])
+    .slice(0, 3)
+    .map((candidate) => `${candidate.path} (${candidate.score ?? 0})`)
+    .join(" | ");
+  const diagnostics = proof.diagnostics
+    ? `\n- failure stage: ${proof.diagnostics.failureStage ?? "none"}\n- source candidates: ${candidates || "none"}${proof.diagnostics.scenarioFailures?.length ? `\n- scenario failures: ${redact(proof.diagnostics.scenarioFailures.join("; ")).slice(0, 500)}` : ""}${proof.diagnostics.regressions?.length ? `\n- regressions: ${redact(proof.diagnostics.regressions.join(", ")).slice(0, 500)}` : ""}`
+    : "";
   return `${commentMarker}
 ## ButtonProbe UI proof
 
@@ -82,7 +99,7 @@ export function buildProofComment(proof, values) {
 - original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}
 - browsers: ${browsers}
 - scenario: ${scenario}
-- report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`${reason}
+- report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`${target}${diagnostics}${reason}
 
 Run artifacts are attached to this workflow when the workflow uploads \`${values.output}\`.`;
 }
@@ -132,18 +149,41 @@ export async function publishPullRequestComment({ env, token, proof, request, ev
 
 async function writeSummary(env, proof, values, comment) {
   if (!env.GITHUB_STEP_SUMMARY) return;
+  await appendFile(env.GITHUB_STEP_SUMMARY, buildJobSummary(proof, values, comment));
+}
+
+export function buildJobSummary(proof, values, comment) {
+  const browsers = (proof.ui?.browsers ?? proof.browsers ?? [])
+    .map((browser) => `${browser.browser}: ${browser.status}`)
+    .join(" | ") || "not run";
+  const candidates = (proof.diagnostics?.sourceCandidates ?? [])
+    .slice(0, 3)
+    .map((candidate) => `${candidate.path} (${candidate.score ?? 0})`)
+    .join(" | ") || "none";
   const commentLine = comment ? `\n- PR comment: ${comment.status}${comment.url ? ` (${comment.url})` : comment.warning ? ` (${comment.warning})` : ""}` : "";
-  await appendFile(
-    env.GITHUB_STEP_SUMMARY,
-    `## ButtonProbe UI proof\n\n- Status: **${proof.status}**\n- Model calls: ${proof.modelCalls ?? proof.usageSummary?.modelCalls ?? 0}\n- Original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}\n- Report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`${commentLine}\n`
-  );
+  return `## ButtonProbe UI proof\n\n- Status: **${proof.status}**\n- Target: ${proof.target?.selector ?? proof.target?.id ?? "not identified"}\n- Failure stage: ${proof.diagnostics?.failureStage ?? "none"}\n- Source candidates: ${candidates}\n- Browsers: ${browsers}\n- Scenario: ${proof.ui?.behaviorContract ? (proof.ui.behaviorContract.passed ? "passed" : "failed") : "not configured"}\n- Model calls: ${proof.modelCalls ?? proof.usageSummary?.modelCalls ?? 0}\n- Original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}\n- Report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`\n- Proof: \`${values.output}/proof.json\`${commentLine}\n`;
 }
 
 async function runAction(env = process.env) {
   const values = parseActionInputs(env);
   const args = buildActionArgs(values);
-  const code = await run("npx", args, env.GITHUB_WORKSPACE ?? process.cwd());
-  const proof = JSON.parse(await (await import("node:fs/promises")).readFile(`${values.output}/proof.json`, "utf8"));
+  const result = await run("npx", args, env.GITHUB_WORKSPACE ?? process.cwd(), values.timeoutMs);
+  let proof;
+  try {
+    proof = JSON.parse(await readFile(`${values.output}/proof.json`, "utf8"));
+  } catch (error) {
+    if (!result.timedOut) throw error;
+    await mkdir(values.output, { recursive: true });
+    await writeFile(`${values.output}/timeout.json`, `${JSON.stringify({ status: "rejected", failureStage: "timeout", timeoutMs: values.timeoutMs, error: "ButtonProbe Action exceeded its hard budget" }, null, 2)}\n`);
+    proof = {
+      status: "rejected",
+      modelCalls: 0,
+      originalCheckoutModified: false,
+      rejectionReason: "ButtonProbe Action exceeded its hard budget",
+      diagnostics: { failureStage: "timeout", sourceCandidates: [], scenarioFailures: [], regressions: [] },
+      artifacts: { report: "timeout.json", screenshots: [], testLog: "timeout.json" }
+    };
+  }
   const comment = values.comment
     ? await publishPullRequestComment({ env, token: values.githubToken, proof, values })
     : { status: "skipped" };
@@ -158,7 +198,7 @@ async function runAction(env = process.env) {
     setOutput(env, "comment-status", comment.status),
     setOutput(env, "comment-url", comment.url ?? "")
   ]);
-  if (shouldFailAction(proof.status, values.failOnUnverified) || code !== 0) process.exitCode = 1;
+  if (shouldFailAction(proof.status, values.failOnUnverified) || result.code !== 0) process.exitCode = 1;
 }
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
