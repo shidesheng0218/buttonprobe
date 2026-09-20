@@ -91,7 +91,7 @@
     "@vue/compiler-sfc": "^3.5.41",
     "commander": "^15.0.0",
     "playwright": "1.62.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "overrides": {
     "nanoid": "3.3.18"
