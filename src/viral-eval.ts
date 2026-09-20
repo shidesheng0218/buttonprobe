@@ -145,6 +145,7 @@ interface FixtureCase {
   normal?: boolean;
   repairStrategy?: "template" | "model";
   scenario?: {
+    actions?: import("./types.js").ScenarioAction[];
     expect?: ScenarioExpectation[];
     forbid?: ScenarioForbid[];
   };
@@ -184,9 +185,25 @@ const reactCaseSlugs = [
   "missing-callback",
   "modal-open",
   "async-swallow",
+  "form-submit",
+  "select-confirm",
+  "check-submit",
+  "keyboard-enter",
+  "modal-loading",
   "normal-button"
 ] as const;
-const vueCaseSlugs = ["empty-click", "wrong-ref", "missing-route", "missing-emit", "normal-button"] as const;
+const vueCaseSlugs = [
+  "empty-click",
+  "wrong-ref",
+  "missing-route",
+  "missing-emit",
+  "form-submit",
+  "select-confirm",
+  "check-submit",
+  "keyboard-enter",
+  "modal-loading",
+  "normal-button"
+] as const;
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -418,7 +435,7 @@ async function runCase(options: CaseRunOptions): Promise<CaseRunResult> {
             scenarios: {
               [state.fixture.testId]: {
                 target: scenarioSelector,
-                actions: [{ type: "click" as const, selector: scenarioSelector }],
+                actions: state.fixture.scenario.actions ?? [{ type: "click" as const, selector: scenarioSelector }],
                 ...(state.fixture.scenario.expect ? { expect: state.fixture.scenario.expect } : {}),
                 ...(state.fixture.scenario.forbid ? { forbid: state.fixture.scenario.forbid } : {})
               }

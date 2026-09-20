@@ -1,0 +1,19 @@
+{
+  "name": "form submit requires filled input",
+  "testId": "submit-profile",
+  "label": "Save profile",
+  "scenario": {
+    "actions": [
+      { "type": "fill", "selector": "[data-testid='profile-name']", "value": "Ada" },
+      { "type": "click", "selector": "[data-testid='submit-profile']" },
+      { "type": "waitFor", "selector": "[data-testid='profile-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Saved Ada" },
+      { "type": "value", "selector": "[data-testid='profile-name']", "value": "Ada" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [name, setName] = useState(\"\");\n  const [status, setStatus] = useState(\"idle\");\n  function submit(event: React.FormEvent) {\n    event.preventDefault();\n    setStatus(\"idle\");\n  }\n  return (\n    <form onSubmit={submit}>\n      <label>Name <input data-testid=\"profile-name\" value={name} onChange={(event) => setName(event.target.value)} /></label>\n      <button data-testid=\"submit-profile\" type=\"submit\">Save profile</button>\n      <span data-testid=\"profile-status\">{status}</span>\n    </form>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [name, setName] = useState(\"\");\n  const [status, setStatus] = useState(\"idle\");\n  function submit(event: React.FormEvent) {\n    event.preventDefault();\n    setStatus(`Saved ${name}`);\n  }\n  return (\n    <form onSubmit={submit}>\n      <label>Name <input data-testid=\"profile-name\" value={name} onChange={(event) => setName(event.target.value)} /></label>\n      <button data-testid=\"submit-profile\" type=\"submit\">Save profile</button>\n      <span data-testid=\"profile-status\">{status}</span>\n    </form>\n  );\n}\n"
+}

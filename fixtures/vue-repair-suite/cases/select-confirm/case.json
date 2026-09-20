@@ -1,0 +1,20 @@
+{
+  "name": "Vue select option requires confirmation",
+  "testId": "confirm-choice",
+  "label": "Confirm choice",
+  "sourceFile": "src/App.vue",
+  "scenario": {
+    "actions": [
+      { "type": "select", "selector": "[data-testid='plan']", "value": "pro" },
+      { "type": "click", "selector": "[data-testid='confirm-choice']" },
+      { "type": "waitFor", "selector": "[data-testid='choice-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Confirmed pro" },
+      { "type": "value", "selector": "[data-testid='plan']", "value": "pro" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst plan = ref(\"starter\");\nconst status = ref(\"idle\");\nfunction confirm() { status.value = \"idle\"; }\n</script>\n<template>\n  <div>\n    <select data-testid=\"plan\" v-model=\"plan\"><option value=\"starter\">Starter</option><option value=\"pro\">Pro</option></select>\n    <button data-testid=\"confirm-choice\" @click=\"confirm\">Confirm choice</button>\n    <span data-testid=\"choice-status\">{{ status }}</span>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst plan = ref(\"starter\");\nconst status = ref(\"idle\");\nfunction confirm() { status.value = `Confirmed ${plan.value}`; }\n</script>\n<template>\n  <div>\n    <select data-testid=\"plan\" v-model=\"plan\"><option value=\"starter\">Starter</option><option value=\"pro\">Pro</option></select>\n    <button data-testid=\"confirm-choice\" @click=\"confirm\">Confirm choice</button>\n    <span data-testid=\"choice-status\">{{ status }}</span>\n  </div>\n</template>\n"
+}

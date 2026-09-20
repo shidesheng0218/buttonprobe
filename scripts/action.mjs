@@ -73,13 +73,25 @@ function redact(value) {
     .replace(/\b(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{8,}\b/g, "[redacted]");
 }
 
+function scenarioVerification(proof) {
+  return proof.scenario ?? proof.ui?.behaviorContract;
+}
+
 export function buildProofComment(proof, values) {
   const browsers = (proof.ui?.browsers ?? proof.browsers ?? [])
     .map((browser) => `${browser.browser}: ${browser.status}`)
     .join(" | ") || "not run";
-  const scenario = proof.ui?.behaviorContract
-    ? proof.ui.behaviorContract.passed ? "passed" : "failed"
+  const scenarioResult = scenarioVerification(proof);
+  const scenario = scenarioResult
+    ? scenarioResult.passed ? "passed" : "failed"
     : "not configured";
+  const steps = scenarioResult?.steps?.length
+    ? scenarioResult.steps.map((step) => `${step.index}:${step.type}:${step.status}`).join(" | ")
+    : "not recorded";
+  const failedStep = scenarioResult?.steps?.find((step) => step.status === "failed");
+  const failedEvidence = failedStep
+    ? `\n- failed scenario evidence: step ${failedStep.index} ${failedStep.type} ${redact(failedStep.selector)}${failedStep.screenshot ? ` (screenshot: ${redact(failedStep.screenshot)})` : ""}`
+    : "";
   const reason = proof.rejectionReason && !/secret|token|key/i.test(proof.rejectionReason)
     ? `\n- rejection: ${redact(proof.rejectionReason).slice(0, 500)}`
     : "";
@@ -99,7 +111,8 @@ export function buildProofComment(proof, values) {
 - original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}
 - browsers: ${browsers}
 - scenario: ${scenario}
-- report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`${target}${diagnostics}${reason}
+- scenario steps: ${steps}
+- report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`${target}${diagnostics}${failedEvidence}${reason}
 
 Run artifacts are attached to this workflow when the workflow uploads \`${values.output}\`.`;
 }
@@ -160,8 +173,16 @@ export function buildJobSummary(proof, values, comment) {
     .slice(0, 3)
     .map((candidate) => `${candidate.path} (${candidate.score ?? 0})`)
     .join(" | ") || "none";
+  const scenarioResult = scenarioVerification(proof);
+  const steps = scenarioResult?.steps?.length
+    ? scenarioResult.steps.map((step) => `${step.index}:${step.type}:${step.status}`).join(" | ")
+    : "not recorded";
+  const failedStep = scenarioResult?.steps?.find((step) => step.status === "failed");
+  const failedEvidence = failedStep
+    ? `\n- Failed scenario evidence: step ${failedStep.index} ${failedStep.type} ${failedStep.selector}${failedStep.screenshot ? ` (screenshot: ${failedStep.screenshot})` : ""}`
+    : "";
   const commentLine = comment ? `\n- PR comment: ${comment.status}${comment.url ? ` (${comment.url})` : comment.warning ? ` (${comment.warning})` : ""}` : "";
-  return `## ButtonProbe UI proof\n\n- Status: **${proof.status}**\n- Target: ${proof.target?.selector ?? proof.target?.id ?? "not identified"}\n- Failure stage: ${proof.diagnostics?.failureStage ?? "none"}\n- Source candidates: ${candidates}\n- Browsers: ${browsers}\n- Scenario: ${proof.ui?.behaviorContract ? (proof.ui.behaviorContract.passed ? "passed" : "failed") : "not configured"}\n- Model calls: ${proof.modelCalls ?? proof.usageSummary?.modelCalls ?? 0}\n- Original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}\n- Report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`\n- Proof: \`${values.output}/proof.json\`${commentLine}\n`;
+  return `## ButtonProbe UI proof\n\n- Status: **${proof.status}**\n- Target: ${proof.target?.selector ?? proof.target?.id ?? "not identified"}\n- Failure stage: ${proof.diagnostics?.failureStage ?? "none"}\n- Source candidates: ${candidates}\n- Browsers: ${browsers}\n- Scenario: ${scenarioResult ? (scenarioResult.passed ? "passed" : "failed") : "not configured"}\n- Scenario steps: ${steps}\n- Model calls: ${proof.modelCalls ?? proof.usageSummary?.modelCalls ?? 0}\n- Original checkout modified: ${String(Boolean(proof.originalCheckoutModified))}\n- Report: \`${values.output}/${proof.artifacts?.report ?? "report.html"}\`\n- Proof: \`${values.output}/proof.json\`${failedEvidence}${commentLine}\n`;
 }
 
 async function runAction(env = process.env) {

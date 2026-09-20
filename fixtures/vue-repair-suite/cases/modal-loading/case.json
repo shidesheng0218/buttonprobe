@@ -1,0 +1,20 @@
+{
+  "name": "Vue modal loading flow waits for completion",
+  "testId": "load-modal",
+  "label": "Load modal",
+  "sourceFile": "src/App.vue",
+  "scenario": {
+    "actions": [
+      { "type": "click", "selector": "[data-testid='load-modal']" },
+      { "type": "waitFor", "selector": "[data-testid='modal']", "state": "visible" },
+      { "type": "waitFor", "selector": "[data-testid='modal-loading']", "state": "hidden", "timeoutMs": 1000 }
+    ],
+    "expect": [
+      { "type": "visible", "selector": "[data-testid='modal']" },
+      { "type": "text", "value": "Loaded" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst open = ref(false);\nfunction load() { open.value = false; }\n</script>\n<template>\n  <div>\n    <button data-testid=\"load-modal\" @click=\"load\">Load modal</button>\n    <div v-if=\"open\" data-testid=\"modal\" role=\"dialog\"><span data-testid=\"modal-loading\">Loading</span></div>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst open = ref(false);\nconst loading = ref(false);\nfunction load() { open.value = true; loading.value = true; setTimeout(() => { loading.value = false; }, 120); }\n</script>\n<template>\n  <div>\n    <button data-testid=\"load-modal\" @click=\"load\">Load modal</button>\n    <div v-if=\"open\" data-testid=\"modal\" role=\"dialog\"><span v-if=\"loading\" data-testid=\"modal-loading\">Loading</span><span v-else>Loaded</span></div>\n  </div>\n</template>\n"
+}

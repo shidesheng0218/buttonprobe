@@ -8,7 +8,7 @@ import { vitePluginSnippet, writeInitialConfig } from "./init-config.js";
 import { runPatchVerification } from "./patch-proof.js";
 import { releaseGatePassed, runExternalEval, runReactEval, runViralEval, runVueEval } from "./viral-eval.js";
 import { mutationReleaseGatePassed, runMutationEval, type UiMutationId } from "./mutation-eval.js";
-import { acceptScenarioDraft, generateScenarioDraft, writeScenarioDraft } from "./scenario-generator.js";
+import { acceptScenarioDraft, generateScenarioDraft, recordScenarioDraft, writeScenarioDraft } from "./scenario-generator.js";
 import { runButtonProbe } from "./workflow.js";
 import type { WorkflowOptions } from "./workflow.js";
 import type { BrowserName } from "./types.js";
@@ -439,6 +439,24 @@ scenario
     await mkdir(join(projectRoot, ".buttonprobe"), { recursive: true });
     await writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
     process.stdout.write(`Accepted scenario "${flags.name}" into ${configPath}\n`);
+  });
+
+scenario
+  .command("record")
+  .description("open Chromium and record an explicit local multi-step scenario draft")
+  .argument("<url>", "localhost URL to record")
+  .requiredOption("--name <name>", "scenario name")
+  .option("--project-root <directory>", "project root for the generated draft", process.cwd())
+  .option("--output <file>", "generated scenario file path")
+  .option("--timeout <milliseconds>", "post-interaction observation window", integer)
+  .option("--unsafe", "allow mutation requests while recording")
+  .action(async (url: string, _flags, command) => {
+    const flags = command.optsWithGlobals() as { name: string; projectRoot: string; output?: string; timeout?: number; unsafe?: boolean };
+    const output = resolve(flags.output ?? join(resolve(flags.projectRoot), ".buttonprobe", "scenarios.generated.json"));
+    const draft = await recordScenarioDraft({ baseUrl: url, name: flags.name, ...(flags.timeout !== undefined ? { timeoutMs: flags.timeout } : {}), unsafe: Boolean(flags.unsafe) });
+    await writeScenarioDraft(output, draft);
+    process.stdout.write(`ButtonProbe recorded scenario draft: ${draft.confidence}\nName: ${draft.name}\nFile: ${output}\n`);
+    if (draft.confidence !== "high") process.exitCode = 1;
   });
 
 program

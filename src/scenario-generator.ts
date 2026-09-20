@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { chromium } from "playwright";
 import { classifyDangerousControl } from "./danger.js";
-import type { ScenarioContract } from "./types.js";
+import type { ScenarioAction, ScenarioContract } from "./types.js";
 
 export type ScenarioDraftConfidence = "high" | "insufficient-evidence";
 
@@ -20,6 +20,22 @@ export interface ScenarioDraft {
 export interface GeneratedScenarios {
   schemaVersion: 1;
   drafts: ScenarioDraft[];
+}
+
+export type RecordedScenarioAction =
+  | ({ type: "fill"; selector: string; value: string; sensitive: boolean })
+  | ({ type: "select"; selector: string; value: string; sensitive: boolean })
+  | ({ type: "check"; selector: string; checked: boolean; sensitive: boolean })
+  | ({ type: "click"; selector: string; sensitive: boolean })
+  | ({ type: "press"; selector: string; key: string; sensitive: boolean });
+
+export function recordedActionsToScenario(input: { target: string; actions: RecordedScenarioAction[] }): { actions: ScenarioAction[]; hasSensitiveInput: boolean } {
+  const hasSensitiveInput = input.actions.some((action) => action.sensitive);
+  if (hasSensitiveInput) return { actions: [], hasSensitiveInput: true };
+  return {
+    actions: input.actions.map(({ sensitive: _sensitive, ...action }) => action),
+    hasSensitiveInput: false
+  };
 }
 
 export interface ScenarioObservationInput {
@@ -114,6 +130,113 @@ export interface GenerateScenarioOptions {
   name?: string;
   timeoutMs?: number;
   unsafe?: boolean;
+}
+
+export interface RecordScenarioOptions {
+  baseUrl: string;
+  name: string;
+  timeoutMs?: number;
+  unsafe?: boolean;
+}
+
+export interface ScenarioRecorderDriver {
+  headless?: boolean;
+  interact(page: import("playwright").Page): Promise<void>;
+}
+
+function recordedSelectorScript(): string {
+  return `(() => {
+    const marker = "__BUTTONPROBE_RECORD__";
+    const selectorFor = (element) => {
+      if (!(element instanceof HTMLElement)) return "";
+      const probeId = element.getAttribute("data-bp-id");
+      if (probeId) return '[data-bp-id="' + CSS.escape(probeId) + '"]';
+      const testId = element.getAttribute("data-testid");
+      if (testId) return '[data-testid="' + CSS.escape(testId) + '"]';
+      if (element.id) return "#" + CSS.escape(element.id);
+      return element.tagName.toLowerCase();
+    };
+    const sensitive = (element) => element instanceof HTMLInputElement && (element.type === "password" || /token|secret|password|api[-_]?key/i.test(element.name + " " + element.id + " " + element.autocomplete));
+    const emit = (event, action) => console.info(marker + JSON.stringify({ ...action, selector: selectorFor(event.target), sensitive: sensitive(event.target) }));
+    document.addEventListener("input", (event) => {
+      const element = event.target;
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) emit(event, { type: "fill", value: element.value });
+    }, true);
+    document.addEventListener("change", (event) => {
+      const element = event.target;
+      if (element instanceof HTMLSelectElement) emit(event, { type: "select", value: element.value });
+      else if (element instanceof HTMLInputElement && element.type === "checkbox") emit(event, { type: "check", checked: element.checked });
+    }, true);
+    document.addEventListener("click", (event) => {
+      const element = event.target;
+      if (element instanceof HTMLButtonElement || element instanceof HTMLAnchorElement || element?.getAttribute?.("role") === "button") emit(event, { type: "click" });
+    }, true);
+    document.addEventListener("keydown", (event) => {
+      if (["Enter", "Escape", "Tab"].includes(event.key)) emit(event, { type: "press", key: event.key });
+    }, true);
+  })();`;
+}
+
+export async function recordScenarioDraft(options: RecordScenarioOptions, driver?: ScenarioRecorderDriver): Promise<ScenarioDraft> {
+  const base = ensureLocalUrl(options.baseUrl);
+  const browser = await chromium.launch({ headless: driver?.headless ?? false });
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const network: string[] = [];
+  const actions: RecordedScenarioAction[] = [];
+  let interactionStarted = false;
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addInitScript(recordedSelectorScript());
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      if (interactionStarted && !options.unsafe && ["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) return route.abort();
+      return route.fallback();
+    });
+    const page = await context.newPage();
+    page.on("console", (message) => {
+      const text = message.text();
+      if (text.startsWith("__BUTTONPROBE_RECORD__")) {
+        try { actions.push(JSON.parse(text.slice("__BUTTONPROBE_RECORD__".length)) as RecordedScenarioAction); } catch { /* ignore malformed page events */ }
+      } else if (interactionStarted && message.type() === "error") consoleErrors.push(text);
+    });
+    page.on("pageerror", (error) => { if (interactionStarted) pageErrors.push(error.message); });
+    page.on("response", (response) => {
+      if (!interactionStarted || response.status() < 200 || response.status() >= 300) return;
+      const request = response.request();
+      if (["xhr", "fetch"].includes(request.resourceType())) network.push(`${request.method()} ${new URL(response.url()).pathname}`);
+    });
+    await page.goto(base.href, { waitUntil: "domcontentloaded" });
+    const beforeText = await page.locator("body").innerText();
+    const beforeUrl = page.url();
+    interactionStarted = true;
+    if (driver) {
+      await driver.interact(page);
+    } else {
+      process.stderr.write("ButtonProbe recording: interact in Chromium, then press Enter here to finish.\n");
+      await new Promise<void>((resolve) => { process.stdin.resume(); process.stdin.once("data", () => resolve()); });
+    }
+    await page.waitForTimeout(options.timeoutMs ?? 500);
+    const recorded = recordedActionsToScenario({ target: actions.findLast((action) => action.type === "click")?.selector ?? actions[0]?.selector ?? "", actions });
+    if (!recorded.actions.length || recorded.hasSensitiveInput) {
+      return {
+        name: options.name,
+        confidence: "insufficient-evidence",
+        baseUrl: base.href,
+        controlId: options.name,
+        selector: recorded.actions[0]?.selector ?? "",
+        generatedAt: new Date().toISOString(),
+        evidence: { observations: [], rejectionReason: recorded.hasSensitiveInput ? "Sensitive input was recorded and was not persisted" : "No stable user actions were recorded" }
+      };
+    }
+    const target = recorded.actions.findLast((action) => action.type === "click")?.selector ?? recorded.actions[0]!.selector;
+    const draft = synthesizeScenarioDraft({ name: options.name, baseUrl: base.href, controlId: options.name, selector: target, beforeText, afterText: await page.locator("body").innerText(), beforeUrl, afterUrl: page.url(), consoleErrors, pageErrors, network: [...new Set(network)] });
+    if (draft.scenario) draft.scenario.actions = recorded.actions;
+    if (!draft.scenario) draft.evidence.observations.push(`${recorded.actions.length} recorded action(s)`);
+    return draft;
+  } finally {
+    await browser.close();
+  }
 }
 
 export async function generateScenarioDraft(options: GenerateScenarioOptions): Promise<ScenarioDraft> {

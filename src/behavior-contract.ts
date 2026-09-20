@@ -1,5 +1,7 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { chromium, firefox, webkit } from "playwright";
-import type { BehaviorContract, BehaviorContractVerification, BrowserName, ScenarioContract } from "./types.js";
+import type { BehaviorContract, BehaviorContractVerification, BrowserName, ScenarioAction, ScenarioContract } from "./types.js";
 
 export interface BehaviorContractRun {
   url: string;
@@ -16,10 +18,49 @@ export interface ScenarioContractRun {
   timeoutMs?: number;
   allowMutations?: boolean;
   browserName?: "chromium" | "firefox" | "webkit";
+  artifactDir?: string;
 }
 
 function includesText(body: string, expected: string): boolean {
   return body.includes(expected);
+}
+
+async function executeScenarioAction(page: import("playwright").Page, action: ScenarioAction): Promise<void> {
+  const locator = page.locator(action.selector).first();
+  if (action.type === "click") {
+    await locator.click({ timeout: 5_000 });
+  } else if (action.type === "fill") {
+    await locator.fill(action.value, { timeout: 5_000 });
+  } else if (action.type === "select") {
+    await locator.selectOption(action.value, { timeout: 5_000 });
+  } else if (action.type === "check") {
+    if (action.checked) await locator.check({ timeout: 5_000 });
+    else await locator.uncheck({ timeout: 5_000 });
+  } else if (action.type === "press") {
+    await locator.press(action.key, { timeout: 5_000 });
+  } else {
+    await locator.waitFor({ state: action.state, timeout: Math.min(action.timeoutMs ?? 5_000, 10_000) });
+  }
+}
+
+async function captureFailedStepEvidence(input: {
+  page: import("playwright").Page;
+  artifactDir?: string;
+  index: number;
+  action: ScenarioAction;
+  consoleErrors: string[];
+  network: string[];
+}): Promise<{ screenshot?: string; consoleErrors: string[]; network: string[] }> {
+  const evidence = { consoleErrors: [...input.consoleErrors], network: [...input.network] };
+  if (!input.artifactDir) return evidence;
+  const screenshot = `screenshots/scenario-step-${input.index}-${input.action.type}-failed.png`;
+  try {
+    await mkdir(join(input.artifactDir, "screenshots"), { recursive: true });
+    await input.page.screenshot({ path: join(input.artifactDir, screenshot), fullPage: true });
+    return { ...evidence, screenshot };
+  } catch {
+    return evidence;
+  }
 }
 
 export function behaviorContractToScenario(
@@ -54,6 +95,7 @@ export async function verifyScenarioContract(input: ScenarioContractRun): Promis
   const failures: string[] = [];
   const network: string[] = [];
   const consoleErrors: string[] = [];
+  const steps: NonNullable<BehaviorContractVerification["steps"]> = [];
   let interactionStarted = false;
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -81,9 +123,31 @@ export async function verifyScenarioContract(input: ScenarioContractRun): Promis
     await page.goto(startUrl, { waitUntil: "domcontentloaded" });
     await page.locator(input.scenario.target).first().waitFor({ state: "visible", timeout: 5_000 });
     interactionStarted = true;
-    for (const action of input.scenario.actions) {
-      if (action.type === "click") {
-        await page.locator(action.selector).first().click({ timeout: 5_000 });
+    for (const [offset, action] of input.scenario.actions.entries()) {
+      const index = offset + 1;
+      try {
+        await executeScenarioAction(page, action);
+        steps.push({ index, type: action.type, selector: action.selector, status: "passed" });
+      } catch (error) {
+        const detail = `scenario step ${index} ${action.type} "${action.selector}" failed: ${(error as Error).message}`;
+        failures.push(detail);
+        const evidence = await captureFailedStepEvidence({
+          page,
+          index,
+          action,
+          consoleErrors,
+          network,
+          ...(input.artifactDir ? { artifactDir: input.artifactDir } : {})
+        });
+        steps.push({
+          index,
+          type: action.type,
+          selector: action.selector,
+          status: "failed",
+          error: (error as Error).message,
+          ...evidence
+        });
+        break;
       }
     }
     await page.waitForTimeout(input.timeoutMs ?? 500);
@@ -109,6 +173,20 @@ export async function verifyScenarioContract(input: ScenarioContractRun): Promis
       } else if (expected.type === "consoleClean") {
         if (consoleErrors.length === 0) checks.push("scenario console stayed clean after interaction");
         else failures.push(`expected a clean console after interaction but observed: ${consoleErrors.join(" | ")}`);
+      } else if (expected.type === "enabled") {
+        if (await page.locator(expected.selector).first().isEnabled().catch(() => false)) checks.push(`scenario selector "${expected.selector}" enabled`);
+        else failures.push(`expected scenario selector "${expected.selector}" to be enabled`);
+      } else if (expected.type === "disabled") {
+        if (await page.locator(expected.selector).first().isDisabled().catch(() => false)) checks.push(`scenario selector "${expected.selector}" disabled`);
+        else failures.push(`expected scenario selector "${expected.selector}" to be disabled`);
+      } else if (expected.type === "value") {
+        const actual = await page.locator(expected.selector).first().inputValue().catch(() => undefined);
+        if (actual === expected.value) checks.push(`scenario value "${expected.value}" present for "${expected.selector}"`);
+        else failures.push(`expected scenario value "${expected.value}" for "${expected.selector}" but got "${actual ?? "unavailable"}"`);
+      } else if (expected.type === "checked") {
+        const actual = await page.locator(expected.selector).first().isChecked().catch(() => undefined);
+        if (actual === expected.checked) checks.push(`scenario selector "${expected.selector}" checked=${expected.checked}`);
+        else failures.push(`expected scenario selector "${expected.selector}" checked=${expected.checked} but got ${actual ?? "unavailable"}`);
       }
     }
     for (const forbidden of input.scenario.forbid ?? []) {
@@ -132,7 +210,7 @@ export async function verifyScenarioContract(input: ScenarioContractRun): Promis
   } finally {
     await browser.close();
   }
-  return { passed: failures.length === 0, checks, failures };
+  return { passed: failures.length === 0, checks, failures, steps };
 }
 
 export async function verifyBehaviorContract(input: BehaviorContractRun): Promise<BehaviorContractVerification> {

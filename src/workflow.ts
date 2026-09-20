@@ -348,7 +348,8 @@ async function requestVerifiedPatchInWorktree(
                     scenario,
                     timeoutMs: interactionTimeoutMs,
                     allowMutations: profile?.networkMode === "sandbox",
-                    browserName
+                    browserName,
+                    artifactDir: verificationDir
                   })
                 : contract && issue.selector
                   ? await verifyBehaviorContract({
@@ -703,7 +704,8 @@ async function runButtonProbeInner(options: WorkflowOptions): Promise<WorkflowRe
                   baseUrl: options.baseUrl,
                   scenario,
                   timeoutMs: options.interactionTimeoutMs,
-                  allowMutations: options.profile?.networkMode === "sandbox"
+                  allowMutations: options.profile?.networkMode === "sandbox",
+                  artifactDir: verificationDir
                 })
               : contract && issue.selector
                 ? await verifyBehaviorContract({

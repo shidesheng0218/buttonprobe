@@ -1,4 +1,7 @@
 import { createServer, type Server } from "node:http";
+import { mkdtemp, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { behaviorContractToScenario, verifyBehaviorContract, verifyScenarioContract } from "../src/behavior-contract.js";
 
@@ -34,7 +37,7 @@ test("verifies an explicit post-click behavior contract", async () => {
     timeoutMs: 30
   });
 
-  expect(result.passed).toBe(true);
+  expect(result.passed, JSON.stringify(result)).toBe(true);
   expect(result.checks).toContain('text "Saved" present');
   expect(result.failures).toEqual([]);
 });
@@ -185,4 +188,74 @@ test("converts consoleClean expectations from legacy behavior contracts", () => 
   });
   expect(scenario.expect).toContainEqual({ type: "consoleClean" });
   expect(scenario.forbid).toContainEqual({ type: "consoleError" });
+});
+
+test("executes a multi-step form scenario and evaluates control-state expectations", async () => {
+  const url = await listen(
+    createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end([
+        '<form><input data-testid="name" value="" oninput="this.parentElement.querySelector(\'button\').disabled=false">',
+        '<select data-testid="role"><option value="viewer">Viewer</option><option value="admin">Admin</option></select>',
+        '<input data-testid="terms" type="checkbox">',
+        '<button type="button" data-testid="submit" disabled onclick="this.parentElement.querySelector(\'p\').textContent=\'Saved\'">Save</button>',
+        '<p class="status" hidden>Saved</p>',
+        '<input data-testid="command" onkeydown="if(event.key===\'Enter\'){ this.parentElement.querySelector(\'p\').hidden=false }"></form>'
+      ].join(""));
+    })
+  );
+
+  const result = await verifyScenarioContract({
+    baseUrl: url,
+    scenario: {
+      target: '[data-testid="name"]',
+      actions: [
+        { type: "fill", selector: '[data-testid="name"]', value: "Ada" },
+        { type: "select", selector: '[data-testid="role"]', value: "admin" },
+        { type: "check", selector: '[data-testid="terms"]', checked: true },
+        { type: "click", selector: '[data-testid="submit"]' },
+        { type: "press", selector: '[data-testid="command"]', key: "Enter" },
+        { type: "waitFor", selector: ".status", state: "visible", timeoutMs: 500 }
+      ],
+      expect: [
+        { type: "text", value: "Saved" },
+        { type: "enabled", selector: '[data-testid="submit"]' },
+        { type: "value", selector: '[data-testid="name"]', value: "Ada" },
+        { type: "checked", selector: '[data-testid="terms"]', checked: true }
+      ]
+    },
+    timeoutMs: 30
+  });
+
+  expect(result.passed).toBe(true);
+  expect(result.checks).toContain('scenario value "Ada" present for "[data-testid="name"]"');
+  expect(result.checks).toContain('scenario selector "[data-testid="submit"]" enabled');
+});
+
+test("reports the exact scenario step when an action fails", async () => {
+  const artifactDir = await mkdtemp(join(tmpdir(), "buttonprobe-scenario-step-"));
+  const url = await listen(createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end('<button data-testid="save">Save</button>');
+  }));
+
+  const result = await verifyScenarioContract({
+    baseUrl: url,
+    scenario: {
+      target: '[data-testid="save"]',
+      actions: [
+        { type: "click", selector: '[data-testid="save"]' },
+        { type: "fill", selector: "#missing", value: "x" }
+      ]
+    },
+    artifactDir
+  });
+
+  expect(result.passed).toBe(false);
+  expect(result.failures.some((failure) => failure.includes('scenario step 2 fill "#missing" failed'))).toBe(true);
+  const failedStep = result.steps?.find((step) => step.status === "failed");
+  expect(failedStep?.screenshot).toBe("screenshots/scenario-step-2-fill-failed.png");
+  expect(failedStep?.consoleErrors).toEqual([]);
+  expect(failedStep?.network).toEqual([]);
+  await stat(join(artifactDir, failedStep?.screenshot ?? ""));
 });

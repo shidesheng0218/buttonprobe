@@ -122,11 +122,11 @@ describe("buttonprobe CLI", () => {
 
     expect(result.code).toBe(0);
     expect(result.output).toContain("ButtonProbe react eval");
-    expect(result.output).toMatch(/10\/10/);
+    expect(result.output).toMatch(/15\/15/);
     const vue = await runCli(["eval", "vue", "--output", ".buttonprobe/eval/vue"]);
     expect(vue.code).toBe(0);
     expect(vue.output).toContain("ButtonProbe vue eval");
-    expect(vue.output).toContain("5/5");
+    expect(vue.output).toContain("10/10");
   }, 300_000);
 
   test("eval help documents mutation benchmark inputs", async () => {

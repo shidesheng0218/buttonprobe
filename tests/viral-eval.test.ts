@@ -60,8 +60,9 @@ describe("viral eval", () => {
     expect(readme).toContain("Isolated Git Worktree");
     expect(readme).toContain("Original repo pollution rate: 0");
     expect(readme).toContain("npx buttonprobe fix http://localhost:5173");
-    expect(readme).toContain("10 isolated Git fixtures");
-    expect(readme).toContain("10/10 React cases UI-verified");
+    expect(readme).toContain("15 isolated Git fixtures");
+    expect(readme).toContain("15/15 React cases UI-verified");
+    expect(readme).toContain("10/10 Vue cases UI-verified");
     expect(readme).toContain("<!-- benchmark:start -->");
     expect(readme).toContain("Generated from real local eval artifacts in `benchmarks/latest.json`.");
     expect(readme).toContain("npx buttonprobe eval viral");
@@ -93,20 +94,27 @@ describe("viral eval", () => {
     const written = JSON.parse(await readFile(join(outputDir, "eval-results.json"), "utf8")) as typeof result;
 
     expect(written.fixture).toBe("fixtures/react-repair-suite");
-    expect(written.summary.total).toBe(10);
-    expect(written.summary.passed).toBe(10);
+    expect(written.summary.total).toBe(15);
+    expect(written.summary.passed).toBe(15);
     expect(written.summary.originalRepoPollutionRate).toBe(0);
     expect(written.durationMs).toBeGreaterThan(0);
     expect(written.modelCalls).toBeGreaterThan(0);
-    expect(written.benchmarks).toHaveLength(10);
+    expect(written.benchmarks).toHaveLength(15);
     const asyncCase = written.benchmarks.find((benchmark) => benchmark.name === "async handler swallows error");
     expect(asyncCase?.repairStatus).toBe("verified");
     expect(asyncCase?.evidenceStatus).toBe("ui-verified");
     expect(asyncCase?.counterfactualVerified).toBe(true);
     expect(asyncCase?.failureStage).toBeNull();
-    expect(written.benchmarks.filter((benchmark) => benchmark.evidenceStatus === "ui-verified").length).toBe(10);
-    expect(new Set(written.benchmarks.map((benchmark) => benchmark.fixtureName)).size).toBe(10);
-    expect(new Set(written.benchmarks.map((benchmark) => benchmark.artifactDir)).size).toBe(10);
+    expect(written.benchmarks.filter((benchmark) => benchmark.evidenceStatus === "ui-verified").length).toBe(15);
+    expect(new Set(written.benchmarks.map((benchmark) => benchmark.fixtureName)).size).toBe(15);
+    expect(new Set(written.benchmarks.map((benchmark) => benchmark.artifactDir)).size).toBe(15);
+    expect(written.benchmarks.map((benchmark) => benchmark.name)).toEqual(expect.arrayContaining([
+      "form submit requires filled input",
+      "select option requires confirmation",
+      "terms checkbox gates submit",
+      "keyboard Enter submits form",
+      "modal loading flow waits for completion"
+    ]));
     for (const benchmark of written.benchmarks) {
       expect(benchmark.fixtureName).toContain("fixtures/react-repair-suite/cases/");
       expect(benchmark.originalCheckoutModified).toBe(false);

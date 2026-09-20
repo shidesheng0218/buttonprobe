@@ -1,10 +1,31 @@
 # ButtonProbe
 
-> ButtonProbe verifies whether a UI repair actually works before it touches your repo.
+> UI repair, proven before merge.
 
 Find dead buttons. Get verified patches. Keep your repo untouched.
 
+Your AI writes the UI diff. ButtonProbe decides whether it is safe to merge.
+
 ![ButtonProbe verified repair demo](docs/buttonprobe-demo.gif)
+
+## The Standard
+
+A patch is not proof. ButtonProbe verifies the browser behavior, the test gate, and the rest of the page in an isolated Git worktree. It returns one of two useful outcomes: `ui-verified`, or a clear reason to keep working.
+
+| Locate | Prove | Decide |
+| --- | --- | --- |
+| Find an inert or crashing control. | Test the diff in an isolated worktree. | Merge only when the UI evidence is complete. |
+
+### Start Here
+
+```bash
+npx buttonprobe verify http://localhost:5173 \
+  --patch agent.diff \
+  --test-command "npm test" \
+  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
+```
+
+Need ButtonProbe to produce a bounded repair attempt as well?
 
 ```bash
 npx buttonprobe fix http://localhost:5173 \
@@ -12,32 +33,21 @@ npx buttonprobe fix http://localhost:5173 \
   --dev-command "npm run dev -- --host 127.0.0.1 --port {port}"
 ```
 
-```bash
-npx buttonprobe verify http://localhost:5173 \
-  --patch agent.diff \
-  --test-command "npm test" \
-  --dev-command "npm run dev -- --host 127.0.0.1 --port {port}" \
-  --browser chromium,firefox,webkit
-```
-
 <!-- benchmark:start -->
-**5/5 viral cases passing. 10/10 React cases UI-verified. 5/5 Vue cases UI-verified. 1/1 external third-party cases UI-verified. Original repo pollution rate: 0.**
+**5/5 viral cases passing. 15/15 React cases UI-verified. 10/10 Vue cases UI-verified. Original repo pollution rate: 0.**
 
 | Suite | Result | Source Top-1 | Residue | Evidence date |
 | --- | --- | --- | --- | --- |
-| Viral | 5/5 passing | 1 | 0 | 2026-08-27 |
-| React | 10/10 UI-verified | 1 | 0 | 2026-08-27 |
-| Vue | 5/5 UI-verified | 1 | 0 | 2026-08-27 |
-| Mutation React | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-08-27 |
-| Mutation Vue | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-08-27 |
-| External | 1/1 UI-verified | 1 | 0 | 2026-08-20 |
+| Viral | 5/5 passing | 1 | 0 | 2026-09-20 |
+| React | 15/15 UI-verified | 1 | 0 | 2026-09-20 |
+| Vue | 10/10 UI-verified | 1 | 0 | 2026-09-20 |
+| Mutation React | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-09-20 |
+| Mutation Vue | 3/3 UI-verified | 1 detect / 1 repair | 0 | 2026-09-20 |
 
 Generated from real local eval artifacts in `benchmarks/latest.json`.
 <!-- benchmark:end -->
 
-ButtonProbe is a local-first proof layer for UI repair diffs. It clicks controls in your local app, finds inert or crashing buttons, optionally asks your own model for a unified diff, then proves the diff in an isolated Git worktree with tests, browser evidence, screenshots, and a report.
-
-It is not trying to be a general AI coding agent. The sharp use case is simpler and harder to fake:
+ButtonProbe is a local-first proof layer for UI repair diffs. It is deliberately not a general coding agent. Its job is narrower, and more demanding:
 
 - Is this button actually broken?
 - Did this patch actually fix it?
@@ -45,6 +55,8 @@ It is not trying to be a general AI coding agent. The sharp use case is simpler 
 - Can I inspect the exact diff before my checkout is touched?
 
 ## Architecture
+
+One input, one proof path. No backend, no telemetry, no model call for `verify --patch`.
 
 ```mermaid
 flowchart LR
@@ -66,40 +78,37 @@ flowchart LR
   L --> O[HTML Report]
 ```
 
-## Why People Star It
+## Built For The Merge Moment
 
-- **Works with your AI stack:** GPT, Claude, DeepSeek, OpenRouter-compatible endpoints, or local Ollama.
-- **Zero-model deterministic repair:** common dead-button patterns are fixed by built-in templates with **0 model calls** and 0 API cost, then proven through the same worktree + browser gate.
-- **No backend:** no hosted model proxy, no telemetry, no database.
-- **Safe by default:** repair runs in a detached Git worktree and keeps your current checkout clean.
-- **Verifies other agents:** `verify --patch` checks diffs from Claude, Codex, Cursor, or a human reviewer with **0 model calls**.
-- **MCP server for agents:** `buttonprobe mcp` exposes scan / verify / doctor tools to Claude Code, Cursor, and Codex so any agent can prove its UI patch before merge.
-- **Proof-carrying output:** `verified.diff`, `proof.json`, before/after screenshots, test logs, source candidates, and `report.html`.
-- **Narrow on purpose:** React/Vite and Vue/Vite repair fixtures are proof-backed; broader scanning still works for local web apps.
+| Local by default | Independent by design | Strict when it matters |
+| --- | --- | --- |
+| No backend, telemetry, database, or hosted model proxy. | Verify diffs from Claude, Codex, Cursor, any agent, or a human with **0 model calls**. | A patch only passes as `ui-verified` when its tests, scenario, browsers, regression guard, and artifacts agree. |
 
-## 10 Second Demo
+Built-in templates handle a few unambiguous repairs with **0 model calls**. When a model is used, choose your own stack: GPT, Claude, DeepSeek, OpenRouter-compatible endpoints, or local Ollama. Either way, the same proof gate applies.
 
-Run a zero-configuration scan against the built-in fixture, or run the zero-cost public eval. Three repairs come from built-in deterministic templates with zero model calls; the rest use the packaged mock OpenAI-compatible endpoint. You do not need an API key.
+## See The Loop
+
+Run a zero-configuration scan against the built-in fixture. No API key is required.
 
 ```bash
 npx buttonprobe demo
 ```
 
-Or run the reproducible eval:
+Or reproduce the public proof fixture:
 
 ```bash
 npx playwright install chromium
 npx buttonprobe eval viral
 ```
 
-Expected result:
+It ends with a result you can inspect:
 
 ```text
 ButtonProbe viral eval: 5/5 passed.
 Original repo pollution rate: 0
 ```
 
-## What It Can Fix Today
+## Evidence-Backed Coverage
 
 ButtonProbe’s proof-backed automatic repair fixtures target local React and Vue JavaScript/TypeScript apps with broken click handlers and inert controls. This is evidence of supported framework adapters, not a claim that every production application pattern is already covered.
 
@@ -126,7 +135,7 @@ npx buttonprobe eval mutate --fixture react
 npx buttonprobe eval mutate --fixture vue
 ```
 
-The React suite runs 10 isolated Git fixtures, each rendered by a real Vite + React 18 app instead of a canned server. Every repair must pass a real `vite build` in an isolated worktree plus browser-level UI verification before a verified diff is issued, and the working-control case must stay unchanged. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
+The React suite runs 15 isolated Git fixtures, including five multi-step workflows for form submission, option selection, checkbox-gated submit, keyboard Enter, and modal loading. The Vue suite runs the same five workflows alongside its existing cases. Every repair must pass a real `vite build` in an isolated worktree plus browser-level UI verification before a verified diff is issued, and the working-control case must stay unchanged. Every case writes its own artifact directory with screenshots, test log, source candidate, diff, failure stage, pollution result, and residue list.
 
 ## Zero-Model Deterministic Repair
 
@@ -333,7 +342,10 @@ Use scenario contracts when a DOM change is not enough proof. Scenarios are dete
       "route": "/profile",
       "target": "[data-testid='save-profile']",
       "actions": [
-        { "type": "click", "selector": "[data-testid='save-profile']" }
+        { "type": "fill", "selector": "[name='displayName']", "value": "Ada" },
+        { "type": "check", "selector": "[name='terms']", "checked": true },
+        { "type": "click", "selector": "[data-testid='save-profile']" },
+        { "type": "waitFor", "selector": "[data-testid='save-toast']", "state": "visible" }
       ],
       "expect": [
         { "type": "text", "value": "Saved" },
@@ -353,6 +365,8 @@ Use scenario contracts when a DOM change is not enough proof. Scenarios are dete
 
 Legacy `behaviorContracts` still work and are internally converted to single-click scenarios.
 
+Multi-step actions are `click`, `fill`, `select`, `check`, `press`, and `waitFor`. Assertions also support `enabled`, `disabled`, `value`, and `checked`. Action failures are reported with their step number and selector in `proof.json`, the HTML report, the GitHub Job Summary, and the optional PR comment.
+
 Generate a high-confidence draft from one observed local interaction without calling a model:
 
 ```bash
@@ -365,6 +379,14 @@ npx buttonprobe scenario accept \
 ```
 
 Generation writes only `.buttonprobe/scenarios.generated.json`. It records unique visible text, stable visible elements, same-origin navigation, safe success-network evidence, and a clean console when those observations are deterministic. `scenario accept` is the explicit step that imports a high-confidence draft into `.buttonprobe/config.json`; existing names require `--force` to overwrite.
+
+For an explicit multi-step recording session, use a local headed Chromium window and press Enter in the terminal after completing the flow:
+
+```bash
+npx buttonprobe scenario record http://localhost:5173 --name save-profile
+```
+
+The recorder prefers `data-bp-id`, `data-testid`, and `id` selectors. Passwords, tokens, API keys, and other secret-like inputs are never persisted; their drafts are marked `insufficient-evidence` for manual review.
 
 ## UI Mutation Benchmark
 

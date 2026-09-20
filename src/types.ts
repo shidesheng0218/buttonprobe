@@ -61,17 +61,24 @@ export interface BehaviorContract {
   forbid?: BehaviorContractForbids;
 }
 
-export type ScenarioAction = {
-  type: "click";
-  selector: string;
-};
+export type ScenarioAction =
+  | { type: "click"; selector: string }
+  | { type: "fill"; selector: string; value: string }
+  | { type: "select"; selector: string; value: string }
+  | { type: "check"; selector: string; checked: boolean }
+  | { type: "press"; selector: string; key: string }
+  | { type: "waitFor"; selector: string; state: "visible" | "hidden"; timeoutMs?: number };
 
 export type ScenarioExpectation =
   | { type: "text"; value: string }
   | { type: "visible"; selector: string }
   | { type: "urlIncludes"; value: string }
   | { type: "network"; value: string }
-  | { type: "consoleClean" };
+  | { type: "consoleClean" }
+  | { type: "enabled"; selector: string }
+  | { type: "disabled"; selector: string }
+  | { type: "value"; selector: string; value: string }
+  | { type: "checked"; selector: string; checked: boolean };
 
 export type ScenarioForbid =
   | { type: "text"; value: string }
@@ -91,6 +98,16 @@ export interface BehaviorContractVerification {
   passed: boolean;
   checks: string[];
   failures: string[];
+  steps?: Array<{
+    index: number;
+    type: ScenarioAction["type"];
+    selector: string;
+    status: "passed" | "failed";
+    error?: string;
+    screenshot?: string;
+    consoleErrors?: string[];
+    network?: string[];
+  }>;
 }
 
 export interface RepairIssue {

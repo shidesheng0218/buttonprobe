@@ -1,0 +1,20 @@
+{
+  "name": "Vue terms checkbox gates submit",
+  "testId": "terms-submit",
+  "label": "Accept terms",
+  "sourceFile": "src/App.vue",
+  "scenario": {
+    "actions": [
+      { "type": "check", "selector": "[data-testid='terms']", "checked": true },
+      { "type": "click", "selector": "[data-testid='terms-submit']" },
+      { "type": "waitFor", "selector": "[data-testid='terms-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Accepted" },
+      { "type": "checked", "selector": "[data-testid='terms']", "checked": true },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst terms = ref(false);\nconst status = ref(\"idle\");\nfunction submit() { if (terms.value) status.value = \"idle\"; }\n</script>\n<template>\n  <div>\n    <label><input data-testid=\"terms\" type=\"checkbox\" v-model=\"terms\" /> Accept terms</label>\n    <button data-testid=\"terms-submit\" @click=\"submit\">Accept terms</button>\n    <span data-testid=\"terms-status\">{{ status }}</span>\n  </div>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst terms = ref(false);\nconst status = ref(\"idle\");\nfunction submit() { status.value = terms.value ? \"Accepted\" : \"Needs terms\"; }\n</script>\n<template>\n  <div>\n    <label><input data-testid=\"terms\" type=\"checkbox\" v-model=\"terms\" /> Accept terms</label>\n    <button data-testid=\"terms-submit\" @click=\"submit\">Accept terms</button>\n    <span data-testid=\"terms-status\">{{ status }}</span>\n  </div>\n</template>\n"
+}

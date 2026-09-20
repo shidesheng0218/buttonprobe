@@ -48,7 +48,8 @@ test("builds a redacted proof comment summary", () => {
       scenarioFailures: [],
       regressions: []
     },
-    ui: { targetWorks: true, regressions: [], browsers: [{ browser: "chromium", status: "passed", targetWorks: true, regressions: [] }] },
+    browsers: [{ browser: "chromium", status: "passed", targetWorks: true, regressions: [] }],
+    scenario: { passed: true, checks: ["scenario text \"Saved\" present"], failures: [], steps: [{ index: 1, type: "click", selector: "[data-testid=\"save\"]", status: "passed" }] },
     artifacts: { report: "report.html", screenshots: [], testLog: "test.log" },
     rejectionReason: "secret-key-should-not-appear"
   }, { output: "buttonprobe-proof" });
@@ -76,12 +77,15 @@ test("builds a diagnostic Job Summary for failed proofs", () => {
     browsers: [{ browser: "chromium", status: "failed" }],
     modelCalls: 0,
     originalCheckoutModified: false,
+    scenario: { passed: false, checks: [], failures: ['scenario step 2 fill "#email" failed'], steps: [{ index: 1, type: "click", selector: "#start", status: "passed" }, { index: 2, type: "fill", selector: "#email", status: "failed", error: "missing", screenshot: "screenshots/scenario-step-2-fill-failed.png", consoleErrors: ["boom"], network: ["GET /profile"] }] },
     artifacts: { report: "report.html" }
   }, { output: "buttonprobe-proof" }, { status: "skipped" });
 
   expect(summary).toContain("Failure stage: scenario");
   expect(summary).toContain("src/App.tsx (28)");
   expect(summary).toContain("[data-testid=\"save\"]");
+  expect(summary).toContain("Scenario steps: 1:click:passed | 2:fill:failed");
+  expect(summary).toContain("Failed scenario evidence: step 2 fill #email (screenshot: screenshots/scenario-step-2-fill-failed.png)");
 });
 
 test("creates then updates only the fixed ButtonProbe PR comment", async () => {

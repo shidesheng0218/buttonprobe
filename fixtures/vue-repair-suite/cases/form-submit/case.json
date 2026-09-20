@@ -1,0 +1,20 @@
+{
+  "name": "Vue form submit requires filled input",
+  "testId": "submit-profile",
+  "label": "Save profile",
+  "sourceFile": "src/App.vue",
+  "scenario": {
+    "actions": [
+      { "type": "fill", "selector": "[data-testid='profile-name']", "value": "Ada" },
+      { "type": "click", "selector": "[data-testid='submit-profile']" },
+      { "type": "waitFor", "selector": "[data-testid='profile-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Saved Ada" },
+      { "type": "value", "selector": "[data-testid='profile-name']", "value": "Ada" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst name = ref(\"\");\nconst status = ref(\"idle\");\nfunction submit() { status.value = \"idle\"; }\n</script>\n<template>\n  <form @submit.prevent=\"submit\">\n    <label>Name <input data-testid=\"profile-name\" v-model=\"name\" /></label>\n    <button data-testid=\"submit-profile\" type=\"submit\">Save profile</button>\n    <span data-testid=\"profile-status\">{{ status }}</span>\n  </form>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst name = ref(\"\");\nconst status = ref(\"idle\");\nfunction submit() { status.value = `Saved ${name.value}`; }\n</script>\n<template>\n  <form @submit.prevent=\"submit\">\n    <label>Name <input data-testid=\"profile-name\" v-model=\"name\" /></label>\n    <button data-testid=\"submit-profile\" type=\"submit\">Save profile</button>\n    <span data-testid=\"profile-status\">{{ status }}</span>\n  </form>\n</template>\n"
+}

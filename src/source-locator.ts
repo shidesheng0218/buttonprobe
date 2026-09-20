@@ -74,6 +74,15 @@ function findJsxTagEnd(source: string, start: number): number | undefined {
   return undefined;
 }
 
+function enclosingFormAttributes(source: string, controlStart: number): string | undefined {
+  const formStart = source.lastIndexOf("<form", controlStart);
+  const lastClosingForm = source.lastIndexOf("</form>", controlStart);
+  if (formStart === -1 || formStart < lastClosingForm) return undefined;
+  const formEnd = findJsxTagEnd(source, formStart + "<form".length);
+  if (formEnd === undefined || formEnd > controlStart) return undefined;
+  return source.slice(formStart + "<form".length, formEnd);
+}
+
 function jsxAttribute(attributes: string, name: string): string | undefined {
   const quoted = attributes.match(new RegExp(`\\b${escapeRegExp(name)}\\s*=\\s*["']([^"']+)["']`, "i"));
   if (quoted?.[1]) return quoted[1];
@@ -114,7 +123,7 @@ function handlerEvidence(
   const body = named ? handlerBody(source, named) : expression;
   if (!body && !named) return { score: 0, reasons: [], calls: [] };
   let score = named ? 8 : 5;
-  const reasons = [named ? `handler ${named}` : "inline click handler"];
+  const reasons = [named ? `handler ${named}` : "inline event handler"];
   const calls: string[] = [];
   const searchableBody = body ?? "";
   for (const setter of setters) {
@@ -195,11 +204,14 @@ function frameworkEventChainScore(content: string, path: string, issue: RepairIs
     const matched = jsxAttribute(attributes, "data-testid") === issue.controlId ||
       jsxAttribute(attributes, "aria-label") === issue.label.trim() || visibleText === issue.label.trim();
     if (!matched) continue;
-    const binding = adapter.eventBinding(attributes);
+    const ownBinding = adapter.eventBinding(attributes);
+    const binding = ownBinding.expression
+      ? ownBinding
+      : adapter.eventBinding(enclosingFormAttributes(content, start) ?? "");
     if (!binding.expression) continue;
     score += 12;
     reasons.push(
-      binding.kind === "vue-click"
+      binding.kind === "vue-click" || binding.kind === "vue-submit"
         ? "Vue event chain"
         : binding.kind === "svelte-click"
           ? "Svelte event chain"
@@ -263,7 +275,7 @@ function sourceScore(content: string, issue: RepairIssue, path: string): { score
     score += 2;
     reasons.push("route path");
   }
-  if (/<button[\s\S]{0,500}(?:\bonClick\s*=|@click\s*=|v-on:click\s*=|on:click\s*=|\bonclick\s*=)|<[^>]+(?:\bonClick\s*=|@click\s*=|v-on:click\s*=|on:click\s*=|\bonclick\s*=)/i.test(content)) {
+  if (/<(?:button|form)[\s\S]{0,500}(?:\bonClick\s*=|\bonSubmit\s*=|@click\s*=|@submit\s*=|v-on:(?:click|submit)\s*=|on:click\s*=|\bonclick\s*=)|<[^>]+(?:\bonClick\s*=|\bonSubmit\s*=|@click\s*=|@submit\s*=|v-on:(?:click|submit)\s*=|on:click\s*=|\bonclick\s*=)/i.test(content)) {
     score += 1;
     reasons.push([".vue", ".svelte"].includes(extname(path).toLowerCase())
       ? "nearby framework event handler"

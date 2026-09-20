@@ -246,6 +246,53 @@ test("traces a Vue click handler through a ref state update", async () => {
   expect(isTrustedSourceCandidate(candidate)).toBe(true);
 });
 
+test("traces a form submit handler from an enclosed React or Vue control", async () => {
+  const root = await mkdtemp(join(tmpdir(), "buttonprobe-submit-source-"));
+  await mkdir(join(root, "src"));
+  await writeFile(
+    join(root, "src", "ProfileForm.tsx"),
+    [
+      'import { useState } from "react";',
+      "export function ProfileForm() {",
+      "  const [saved, setSaved] = useState(false);",
+      "  function submit() { setSaved(true); }",
+      '  return <form onSubmit={submit}><button data-testid="save-profile" type="submit">Save profile</button></form>;',
+      "}"
+    ].join("\n")
+  );
+  await writeFile(
+    join(root, "src", "SettingsForm.vue"),
+    [
+      '<script setup lang="ts">',
+      'import { ref } from "vue";',
+      'const saved = ref(false);',
+      'function submit() { saved.value = true; }',
+      '</script>',
+      '<template><form @submit.prevent="submit"><button data-testid="save-settings" type="submit">Save settings</button></form></template>'
+    ].join("\n")
+  );
+
+  const [react] = await locateSourceCandidates(root, {
+    controlId: "save-profile",
+    pageUrl: "http://localhost:5173/profile",
+    label: "Save profile",
+    verdict: "INERT",
+    evidence: { beforeScreenshot: "before.png", afterScreenshot: "after.png", signals: [] }
+  });
+  const [vue] = await locateSourceCandidates(root, {
+    controlId: "save-settings",
+    pageUrl: "http://localhost:5173/settings",
+    label: "Save settings",
+    verdict: "INERT",
+    evidence: { beforeScreenshot: "before.png", afterScreenshot: "after.png", signals: [] }
+  });
+
+  expect(react?.eventChain).toMatchObject({ handler: "submit", calls: ["setSaved"] });
+  expect(vue?.eventChain).toMatchObject({ handler: "submit", calls: ["saved"] });
+  expect(isTrustedSourceCandidate(react)).toBe(true);
+  expect(isTrustedSourceCandidate(vue)).toBe(true);
+});
+
 test("traces a Vue emit handler as an event-chain call", async () => {
   const root = await mkdtemp(join(tmpdir(), "buttonprobe-vue-emit-source-"));
   await mkdir(join(root, "src"));

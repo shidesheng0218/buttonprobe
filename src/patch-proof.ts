@@ -185,6 +185,9 @@ function proofScreenshotPaths(baselineControls: ScanControl[], ui: UIVerificatio
       join("ui-verification", ui.evidence.afterScreenshot)
     );
   }
+  for (const step of ui?.behaviorContract?.steps ?? []) {
+    if (step.screenshot) screenshots.push(join("ui-verification", step.screenshot));
+  }
   return [...new Set(screenshots)];
 }
 
@@ -311,7 +314,8 @@ export async function runPatchVerification(options: PatchVerificationOptions): P
                     scenario,
                     timeoutMs: interactionTimeoutMs,
                     allowMutations: options.profile?.networkMode === "sandbox",
-                    browserName
+                    browserName,
+                    artifactDir: join(outputDir, "ui-verification")
                   })
                 : undefined;
               const regressions = currentControls

@@ -1,0 +1,19 @@
+{
+  "name": "terms checkbox gates submit",
+  "testId": "terms-submit",
+  "label": "Accept terms",
+  "scenario": {
+    "actions": [
+      { "type": "check", "selector": "[data-testid='terms']", "checked": true },
+      { "type": "click", "selector": "[data-testid='terms-submit']" },
+      { "type": "waitFor", "selector": "[data-testid='terms-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Accepted" },
+      { "type": "checked", "selector": "[data-testid='terms']", "checked": true },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [terms, setTerms] = useState(false);\n  const [status, setStatus] = useState(\"idle\");\n  return (\n    <div>\n      <label><input data-testid=\"terms\" type=\"checkbox\" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> Accept terms</label>\n      <button data-testid=\"terms-submit\" onClick={() => { if (terms) setStatus(\"idle\"); }}>Accept terms</button>\n      <span data-testid=\"terms-status\">{status}</span>\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [terms, setTerms] = useState(false);\n  const [status, setStatus] = useState(\"idle\");\n  return (\n    <div>\n      <label><input data-testid=\"terms\" type=\"checkbox\" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> Accept terms</label>\n      <button data-testid=\"terms-submit\" onClick={() => setStatus(terms ? \"Accepted\" : \"Needs terms\")}>Accept terms</button>\n      <span data-testid=\"terms-status\">{status}</span>\n    </div>\n  );\n}\n"
+}

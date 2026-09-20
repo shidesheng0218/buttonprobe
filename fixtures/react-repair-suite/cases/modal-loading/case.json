@@ -1,0 +1,19 @@
+{
+  "name": "modal loading flow waits for completion",
+  "testId": "load-modal",
+  "label": "Load modal",
+  "scenario": {
+    "actions": [
+      { "type": "click", "selector": "[data-testid='load-modal']" },
+      { "type": "waitFor", "selector": "[data-testid='modal']", "state": "visible" },
+      { "type": "waitFor", "selector": "[data-testid='modal-loading']", "state": "hidden", "timeoutMs": 1000 }
+    ],
+    "expect": [
+      { "type": "visible", "selector": "[data-testid='modal']" },
+      { "type": "text", "value": "Loaded" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [open, setOpen] = useState(false);\n  return (\n    <div>\n      <button data-testid=\"load-modal\" onClick={() => setOpen(false)}>Load modal</button>\n      {open ? <div data-testid=\"modal\" role=\"dialog\"><span data-testid=\"modal-loading\">Loading</span></div> : null}\n    </div>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [open, setOpen] = useState(false);\n  const [loading, setLoading] = useState(false);\n  function load() { setOpen(true); setLoading(true); setTimeout(() => setLoading(false), 120); }\n  return (\n    <div>\n      <button data-testid=\"load-modal\" onClick={load}>Load modal</button>\n      {open ? <div data-testid=\"modal\" role=\"dialog\">{loading ? <span data-testid=\"modal-loading\">Loading</span> : <span>Loaded</span>}</div> : null}\n    </div>\n  );\n}\n"
+}

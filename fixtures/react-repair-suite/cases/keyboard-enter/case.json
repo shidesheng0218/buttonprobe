@@ -1,0 +1,19 @@
+{
+  "name": "keyboard Enter submits form",
+  "testId": "keyboard-submit",
+  "label": "Keyboard submit",
+  "scenario": {
+    "actions": [
+      { "type": "fill", "selector": "[data-testid='command']", "value": "deploy" },
+      { "type": "press", "selector": "[data-testid='command']", "key": "Enter" },
+      { "type": "waitFor", "selector": "[data-testid='command-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Ran deploy" },
+      { "type": "value", "selector": "[data-testid='command']", "value": "deploy" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "import { useState } from \"react\";\n\nexport function App() {\n  const [command, setCommand] = useState(\"\");\n  const [status, setStatus] = useState(\"idle\");\n  function submit(event: React.FormEvent) { event.preventDefault(); setStatus(\"idle\"); }\n  return (\n    <form onSubmit={submit}>\n      <input data-testid=\"command\" value={command} onChange={(event) => setCommand(event.target.value)} />\n      <button data-testid=\"keyboard-submit\" type=\"submit\">Keyboard submit</button>\n      <span data-testid=\"command-status\">{status}</span>\n    </form>\n  );\n}\n",
+  "fixedSource": "import { useState } from \"react\";\n\nexport function App() {\n  const [command, setCommand] = useState(\"\");\n  const [status, setStatus] = useState(\"idle\");\n  function submit(event: React.FormEvent) { event.preventDefault(); setStatus(`Ran ${command}`); }\n  return (\n    <form onSubmit={submit}>\n      <input data-testid=\"command\" value={command} onChange={(event) => setCommand(event.target.value)} />\n      <button data-testid=\"keyboard-submit\" type=\"submit\">Keyboard submit</button>\n      <span data-testid=\"command-status\">{status}</span>\n    </form>\n  );\n}\n"
+}

@@ -80,7 +80,8 @@ function repairTimeline(result: RepairLoopResult): string {
         ${
           attempt.ui?.behaviorContract
             ? `<p><strong>Behavior contract:</strong> ${attempt.ui.behaviorContract.passed ? "passed" : "failed"}
-               ${attempt.ui.behaviorContract.failures.length ? ` · ${escapeHtml(attempt.ui.behaviorContract.failures.join("; "))}` : ""}</p>`
+               ${attempt.ui.behaviorContract.failures.length ? ` · ${escapeHtml(attempt.ui.behaviorContract.failures.join("; "))}` : ""}
+               ${attempt.ui.behaviorContract.steps?.length ? `<br><strong>Scenario steps:</strong> ${attempt.ui.behaviorContract.steps.map((step) => `${step.index}:${escapeHtml(step.type)}:${escapeHtml(step.status)}${step.error ? ` (${escapeHtml(step.error)})` : ""}${step.screenshot ? ` [screenshot: ${escapeHtml(step.screenshot)}]` : ""}${step.consoleErrors?.length ? ` [console: ${escapeHtml(step.consoleErrors.join(" | "))}]` : ""}${step.network?.length ? ` [network: ${escapeHtml(step.network.join(" | "))}]` : ""}`).join(" · ")}` : ""}</p>`
             : ""
         }
         ${

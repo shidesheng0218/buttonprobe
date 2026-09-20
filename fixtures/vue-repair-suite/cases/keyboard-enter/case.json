@@ -1,0 +1,20 @@
+{
+  "name": "Vue keyboard Enter submits form",
+  "testId": "keyboard-submit",
+  "label": "Keyboard submit",
+  "sourceFile": "src/App.vue",
+  "scenario": {
+    "actions": [
+      { "type": "fill", "selector": "[data-testid='command']", "value": "deploy" },
+      { "type": "press", "selector": "[data-testid='command']", "key": "Enter" },
+      { "type": "waitFor", "selector": "[data-testid='command-status']", "state": "visible" }
+    ],
+    "expect": [
+      { "type": "text", "value": "Ran deploy" },
+      { "type": "value", "selector": "[data-testid='command']", "value": "deploy" },
+      { "type": "consoleClean" }
+    ]
+  },
+  "source": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst command = ref(\"\");\nconst status = ref(\"idle\");\nfunction submit() { status.value = \"idle\"; }\n</script>\n<template>\n  <form @submit.prevent=\"submit\">\n    <input data-testid=\"command\" v-model=\"command\" />\n    <button data-testid=\"keyboard-submit\" type=\"submit\">Keyboard submit</button>\n    <span data-testid=\"command-status\">{{ status }}</span>\n  </form>\n</template>\n",
+  "fixedSource": "<script setup lang=\"ts\">\nimport { ref } from \"vue\";\nconst command = ref(\"\");\nconst status = ref(\"idle\");\nfunction submit() { status.value = `Ran ${command.value}`; }\n</script>\n<template>\n  <form @submit.prevent=\"submit\">\n    <input data-testid=\"command\" v-model=\"command\" />\n    <button data-testid=\"keyboard-submit\" type=\"submit\">Keyboard submit</button>\n    <span data-testid=\"command-status\">{{ status }}</span>\n  </form>\n</template>\n"
+}
